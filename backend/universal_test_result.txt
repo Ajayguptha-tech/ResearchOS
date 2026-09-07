@@ -1,0 +1,11 @@
+﻿python : Traceback (most recent call last):
+At line:1 char:57
++ ... \ResearchOS\backend'; python test_universal_assistant.py 2>&1 | Out-F ...
++                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\LENOVO\Desktop\master\ResearchOS\backend\test_universal_assistant.py", line 28, in <module>
+    project_id = r.json()["id"]
+                 ~~~~~~~~^^^^^^
+KeyError: 'id'

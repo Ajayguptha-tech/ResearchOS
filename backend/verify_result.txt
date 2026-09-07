@@ -1,0 +1,12 @@
+﻿7 routes loaded
+  /
+  /docs
+  /docs/oauth2-redirect
+  /health
+  /health/dependencies
+  /openapi.json
+  /redoc
+
+Literature agent OK
+Current year: 2026
+Year window: 2006 - 2026

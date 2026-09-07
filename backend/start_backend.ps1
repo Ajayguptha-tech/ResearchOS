@@ -1,0 +1,2 @@
+cd "C:\Users\LENOVO\Desktop\master\ResearchOS\backend"
+Start-Process -FilePath "python" -ArgumentList "-m","uvicorn","app.main:app","--reload","--host","127.0.0.1","--port","8000" -WorkingDirectory "C:\Users\LENOVO\Desktop\master\ResearchOS\backend" -RedirectStandardOutput "C:\Users\LENOVO\Desktop\master\ResearchOS\.freebuff\backend-stdout.log" -RedirectStandardError "C:\Users\LENOVO\Desktop\master\ResearchOS\.freebuff\backend-stderr.log" -WindowStyle Hidden -PassThru | Select-Object -ExpandProperty Id

@@ -1,0 +1,53 @@
+# Environment files — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Database
+*.db
+data/
+
+# Uploads
+data/uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ResearchOS
+data/vector_store/
+.freebuff/
+
+# Security & Secrets
+credentials*
+*.pem
+*.key
+*.cert
+*.pfx
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/

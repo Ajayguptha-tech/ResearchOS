@@ -1,0 +1,25 @@
+PASS   | health check
+PASS   | register
+PASS   | login
+PASS   | create project
+PASS   | list projects
+PASS   | create paper
+PASS   | list papers
+PASS   | mark paper recent
+PASS   | unmark paper recent
+PASS   | create draft
+PASS   | list drafts
+PASS   | get draft
+PASS   | generate draft
+PASS   | update draft
+PASS   | list draft versions
+PASS   | search literature endpoint
+PASS   | list references
+PASS   | create reference
+PASS   | list evidence sessions
+PASS   | list reminders
+PASS   | delete draft
+PASS   | delete paper
+PASS   | cross-user draft access blocked
+
+23/23 tests passed

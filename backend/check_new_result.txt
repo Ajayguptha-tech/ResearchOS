@@ -1,0 +1,7 @@
+paper_drafts route: OK
+paper_drafts schema: OK
+paper_writing_agent: OK
+PaperDraft model: OK
+main app: OK
+
+Total: 5/5 passed
