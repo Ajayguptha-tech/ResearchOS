@@ -1,1 +1,1 @@
-Ollama running. Models: qwen2.5:32b
+Ollama NOT running: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>

@@ -53,7 +53,7 @@ else:
 headers = {"Authorization": f"Bearer {token}"}
 
 # Create project
-r = requests.post(f"{BASE}/api/v1/projects", json={
+r = requests.post(f"{BASE}/api/v1/projects/", json={
     "title": "AI Research Project",
     "domain": "NLP, Machine Learning",
     "description": "Exploring transformer architectures for low-resource languages",
