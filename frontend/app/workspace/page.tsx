@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useRouter } from 'next/navigation';
 
 import {
   analyzeResearch,
@@ -45,16 +46,14 @@ import {
   snoozeFollowUp,
   uploadResearchDocument,
   UserProfile,
+  summarizeDocuments,
+  DocumentSummaryItem,
 } from '../../lib/api';
-import ResearchAssistant from '../../components/ResearchAssistant';
 
 export default function WorkspacePage() {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('access_token');
-    }
-    return null;
-  });
+  const router = useRouter();
+  const [token, setToken] = useState<string | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -105,6 +104,24 @@ export default function WorkspacePage() {
 
   const [isAnalyzing, setIsAnalyzing] =
     useState(false);
+
+  // Document Summaries
+  const [docSummaries, setDocSummaries] = useState<DocumentSummaryItem[] | null>(null);
+  const [summarizingDocs, setSummarizingDocs] = useState(false);
+
+  async function handleSummarizeWorkspaceDocuments() {
+    if (!token) return;
+    setSummarizingDocs(true);
+    setError('');
+    try {
+      const res = await summarizeDocuments(token);
+      setDocSummaries(res.summaries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to summarize documents.');
+    } finally {
+      setSummarizingDocs(false);
+    }
+  }
 
   // Literature Search (paginated)
   const [litQuery, setLitQuery] = useState('');
@@ -159,6 +176,8 @@ export default function WorkspacePage() {
         if (msg === 'Invalid token' || msg === 'Authentication required') {
           window.localStorage.removeItem('access_token');
           setToken(null);
+          setIsAuthChecking(false);
+          router.replace('/login');
           return;
         }
         setError(msg || 'Unable to load workspace.');
@@ -180,11 +199,15 @@ export default function WorkspacePage() {
         'access_token'
       );
 
-    if (!savedToken) return;
+    if (!savedToken) {
+      router.replace('/login');
+      return;
+    }
 
     setToken(savedToken);
+    setIsAuthChecking(false);
     loadWorkspaceData(savedToken);
-  }, []);
+  }, [router]);
 
   async function handleAuth(
     event: FormEvent<HTMLFormElement>
@@ -594,6 +617,19 @@ export default function WorkspacePage() {
     setReminders([]);
     setResearchAnalysis(null);
     setWorkspaceDocuments([]);
+    router.replace('/login');
+  }
+
+  if (isAuthChecking || !token) {
+    return (
+      <main className="research-shell workspace-page min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="research-processing-orb mx-auto" />
+          <p className="mt-4 text-sm font-medium uppercase tracking-widest text-cyan-400">ResearchOS</p>
+          <p className="mt-2 text-sm text-slate-400">Loading workspace…</p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -622,7 +658,7 @@ export default function WorkspacePage() {
           </div>
 
           <div className="workspace-header-actions">
-            {token && <nav aria-label="Workspace navigation" className="workspace-nav"><a href="/workspace">Workspace</a><a href="/dashboard">Projects</a><a href="/research/new">Research Ideas</a><a href="/law">Legal research</a><a href="/workspace#reminders">Reminders</a></nav>}
+            <nav aria-label="Workspace navigation" className="workspace-nav"><a href="/workspace">Workspace</a><a href="/dashboard">Projects</a><a href="/research/new">Research Ideas</a><a href="/workspace#reminders">Reminders</a></nav>
             {token && (
               <div className="flex items-center gap-3">
                 {userProfile && <span className="text-sm text-slate-500">{userProfile.name}</span>}
@@ -665,109 +701,18 @@ export default function WorkspacePage() {
           </div>
         )}
 
-        {token && (
-          <aside className="workspace-sidebar" aria-label="ResearchOS navigation">
-            <div className="workspace-sidebar-brand"><div><strong>ResearchOS</strong><small>AI Research Intelligence</small></div></div>
-            <nav>
-              <a className="active" href="/workspace"><i aria-hidden="true">◈</i>Workspace</a>
-              <a href="/dashboard"><i aria-hidden="true">▦</i>Projects</a>
-              <a href="/research/new"><i aria-hidden="true">✦</i>Research Ideas</a>
-              <span><i aria-hidden="true">⌕</i>Literature</span><span><i aria-hidden="true">◌</i>Experiments</span><span><i aria-hidden="true">↗</i>Roadmap</span><span><i aria-hidden="true">▤</i>Datasets</span><span><i aria-hidden="true">◫</i>Analytics</span><span><i aria-hidden="true">⏰</i>Reminders</span>
-            </nav>
-            {userProfile && <p>Signed in as {userProfile.name}</p>}
-          </aside>
-        )}
+        <aside className="workspace-sidebar" aria-label="ResearchOS navigation">
+          <div className="workspace-sidebar-brand"><div><strong>ResearchOS</strong><small>AI Research Intelligence</small></div></div>
+          <nav>
+            <a className="active" href="/workspace"><i aria-hidden="true">◈</i>Workspace</a>
+            <a href="/dashboard"><i aria-hidden="true">▦</i>Projects</a>
+            <a href="/research/new"><i aria-hidden="true">✦</i>Research Ideas</a>
+            <span><i aria-hidden="true">⌕</i>Literature</span><span><i aria-hidden="true">◌</i>Experiments</span><span><i aria-hidden="true">↗</i>Roadmap</span><span><i aria-hidden="true">▤</i>Datasets</span><span><i aria-hidden="true">◫</i>Analytics</span><span><i aria-hidden="true">⏰</i>Reminders</span>
+          </nav>
+          {userProfile && <p>Signed in as {userProfile.name}</p>}
+        </aside>
 
-        {/* AUTH */}
-
-        {!token ? (
-          <form
-            onSubmit={handleAuth}
-            className="mt-10 max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-cyan-950/20"
-          >
-            <h2 className="text-xl font-semibold">
-              {isRegistering
-                ? 'Create your workspace'
-                : 'Enter your workspace'}
-            </h2>
-
-            <div className="mt-6 space-y-4">
-
-              {isRegistering && (
-                <input
-                  required
-                  value={name}
-                  onChange={(event) =>
-                    setName(event.target.value)
-                  }
-                  placeholder="Your name"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400"
-                />
-              )}
-
-              <input
-                required
-                type="email"
-                value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
-                placeholder="Email address"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400"
-              />
-
-              <input
-                required
-                minLength={8}
-                type="password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(
-                    event.target.value
-                  )
-                }
-                placeholder="Password"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400"
-              />
-
-              <button
-                disabled={isLoading}
-                className="w-full rounded-lg bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-50"
-              >
-                {isLoading
-                  ? 'Connecting...'
-                  : isRegistering
-                  ? 'Create account'
-                  : 'Sign in'}
-              </button>
-            </div>
-
-            <div className="mt-5 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() =>
-                  setIsRegistering(
-                    (current) => !current
-                  )
-                }
-                className="text-sm text-cyan-400 hover:text-cyan-300"
-              >
-                {isRegistering
-                  ? 'Already have an account? Sign in'
-                  : 'New to ResearchOS? Create an account'}
-              </button>
-              {!isRegistering && (
-                <button
-                  type="button"
-                  onClick={() => window.location.href = '/forgot-password'}
-                  className="text-sm text-cyan-400 hover:text-cyan-300"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
-          </form>
-        ) : connecting ? (
+        {connecting ? (
           <div className="mt-10 flex flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
             <p className="text-sm font-medium uppercase tracking-widest text-cyan-400">ResearchOS</p>
             <h2 className="mt-3 text-xl font-semibold">Connecting to research engine...</h2>
@@ -1147,8 +1092,88 @@ export default function WorkspacePage() {
                     Upload research papers, datasets, and documents for AI-powered analysis.
                   </p>
                 </div>
-                <span className="text-sm text-slate-500">{workspaceDocuments.length} documents</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-500">{workspaceDocuments.length} documents</span>
+                  <button
+                    type="button"
+                    onClick={handleSummarizeWorkspaceDocuments}
+                    disabled={summarizingDocs || workspaceDocuments.length === 0}
+                    className="rounded-lg bg-cyan-400 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50"
+                  >
+                    {summarizingDocs ? 'Summarizing…' : `Summarize Documents (${workspaceDocuments.length})`}
+                  </button>
+                </div>
               </div>
+
+              {summarizingDocs && (
+                <div className="mt-4 flex items-center gap-3 rounded-xl border border-cyan-900/60 bg-slate-900/80 p-4">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+                  <p className="text-sm text-slate-300">Summarizing workspace documents with grounded AI analysis…</p>
+                </div>
+              )}
+
+              {docSummaries && !summarizingDocs && (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-slate-100">
+                      📄 Document Summaries ({docSummaries.length})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setDocSummaries(null)}
+                      className="text-xs text-slate-400 hover:text-slate-200"
+                    >
+                      Clear summaries
+                    </button>
+                  </div>
+                  {docSummaries.length === 0 ? (
+                    <p className="text-xs text-slate-400">No documents in workspace to summarize.</p>
+                  ) : (
+                    docSummaries.map((ds) => (
+                      <article key={ds.document_id} className="rounded-lg border border-slate-800 bg-slate-950 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h4 className="font-semibold text-sm text-cyan-300">{ds.title}</h4>
+                            <p className="mt-0.5 text-xs text-slate-500">{ds.filename} · {ds.extracted_characters.toLocaleString()} characters extracted</p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-cyan-950 px-2.5 py-0.5 text-xs text-cyan-300">Workspace Document</span>
+                        </div>
+                        {ds.summary && (
+                          <div className="mt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Summary</p>
+                            <p className="mt-1 text-xs leading-relaxed text-slate-300">{ds.summary}</p>
+                          </div>
+                        )}
+                        {ds.key_findings && ds.key_findings.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Key Findings</p>
+                            <ul className="mt-1 space-y-1">
+                              {ds.key_findings.map((f, i) => (
+                                <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                                  <span className="mt-0.5 text-cyan-400">•</span>
+                                  <span>{f}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {ds.methodology && ds.methodology.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Methodology</p>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {ds.methodology.map((m, i) => (
+                                <span key={i} className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-300">
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    ))
+                  )}
+                </div>
+              )}
 
               <div className="mt-5 space-y-3">
                 {workspaceDocuments.length === 0 ? (
@@ -1275,177 +1300,171 @@ export default function WorkspacePage() {
             {researchAnalysis && (
               <section className="research-results mt-8 space-y-6">
 
-                {/* PLAN */}
+                {/* RESEARCH PROBLEM & OBJECTIVES */}
 
                 <div className="rounded-2xl border border-cyan-900/50 bg-slate-900 p-6">
 
                   <p className="text-sm text-cyan-400">
-                    Research Plan
+                    Research Problem Formulation
                   </p>
 
                   <h3 className="mt-2 text-2xl font-semibold">
                     {researchAnalysis.plan.idea}
                   </h3>
 
-                  <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  {researchAnalysis.plan.problem_understanding && (
+                    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                        Problem Understanding
+                      </p>
+                      <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                        {researchAnalysis.plan.problem_understanding}
+                      </p>
+                    </div>
+                  )}
 
-                    {researchAnalysis.plan.objectives.map(
-                      (objective, index) => (
-                        <div
-                          key={index}
-                          className="rounded-xl border border-slate-800 bg-slate-950 p-4"
-                        >
-                          <p className="text-xs text-cyan-400">
-                            OBJECTIVE {index + 1}
-                          </p>
-
-                          <p className="mt-2 text-sm text-slate-300">
-                            {objective}
-                          </p>
-                        </div>
-                      )
-                    )}
-
+                  <div className="mt-5">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Research Objectives
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {researchAnalysis.plan.objectives.map(
+                        (objective, index) => (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-slate-800 bg-slate-950 p-4"
+                          >
+                            <p className="text-xs text-cyan-400">
+                              OBJECTIVE {index + 1}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-300">
+                              {objective}
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
                   </div>
+
+                  {researchAnalysis.plan.research_questions && researchAnalysis.plan.research_questions.length > 0 && (
+                    <div className="mt-5">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Core Research Questions
+                      </p>
+                      <div className="space-y-2">
+                        {researchAnalysis.plan.research_questions.map((rq, index) => (
+                          <div key={index} className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300">
+                            <span className="shrink-0 rounded-full bg-cyan-950 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
+                              RQ{index + 1}
+                            </span>
+                            <span>{rq}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
 
                 <div className="research-overview" aria-label="Research overview">
-                  <div><span>Literature</span><strong>{researchAnalysis.literature.results.length}</strong><small>Papers found</small></div>
-                  <div><span>Analysis</span><strong>{researchAnalysis.analysis.papers_processed}</strong><small>Papers analyzed</small></div>
+                  <div><span>Analysis</span><strong>{researchAnalysis.analysis.papers_processed}</strong><small>Sources evaluated</small></div>
                   <div><span>Research gaps</span><strong>{researchAnalysis.research_gaps.gaps.length}</strong><small>Gaps found</small></div>
                   <div><span>Datasets</span><strong>{researchAnalysis.datasets.recommendations.length}</strong><small>Recommendations</small></div>
+                  <div><span>Models</span><strong>{researchAnalysis.plan.model_recommendations?.length || 3}</strong><small>Architectures</small></div>
                   <div><span>Experiments</span><strong>{researchAnalysis.experiments.experiments.length}</strong><small>Planned</small></div>
                   <div><span>Roadmap</span><strong>{researchAnalysis.roadmap.milestones.length}</strong><small>Milestones</small></div>
                 </div>
 
-                {/* LITERATURE */}
+                {/* MODEL & ALGORITHM RECOMMENDATIONS */}
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-
-                  <div className="flex items-center justify-between gap-4">
-
-                    <div>
-                      <p className="text-sm text-cyan-400">
-                        Literature Intelligence
-                      </p>
-
-                      <h3 className="mt-1 text-2xl font-semibold">
-                        Literature Review
-                      </h3>
+                {researchAnalysis.plan.model_recommendations && researchAnalysis.plan.model_recommendations.length > 0 && (
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm text-cyan-400">
+                          Architecture Recommendations
+                        </p>
+                        <h3 className="mt-1 text-2xl font-semibold">
+                          Recommended Models &amp; Algorithms
+                        </h3>
+                      </div>
+                      <span className="rounded-full bg-cyan-950 px-3 py-1 text-xs text-cyan-300">
+                        {researchAnalysis.plan.model_recommendations.length} Architectures
+                      </span>
                     </div>
 
-                    <span className="rounded-full bg-emerald-950 px-3 py-1 text-xs text-emerald-300">
-                      {researchAnalysis.literature.results.length}{' '}
-                      papers
-                    </span>
-
-                  </div>
-
-                  <div className="mt-5 space-y-4">
-
-                    {researchAnalysis.literature.results.map(
-                      (paper, index) => (
-                        <article
-                          key={`${paper.title}-${index}`}
-                          className="rounded-xl border border-slate-800 bg-slate-950 p-5"
-                        >
-
-                          <div className="flex items-start justify-between gap-4">
-
-                            <div>
-                              <h4 className="font-semibold text-slate-100">
-                                {paper.title}
-                              </h4>
-
-                              <p className="mt-1 text-xs text-slate-500">
-                                {paper.authors?.join(', ') ||
-                                  'Authors unavailable'}
-                                {' • '}
-                                {paper.year}
-                              </p>
-                            </div>
-
-                            {paper.relevance_score !==
-                              undefined && (
-                              <span className="shrink-0 text-xs text-cyan-400">
-                                Score {paper.relevance_score}
-                              </span>
-                            )}
-
-                          </div>
-
-                          {paper.abstract && (
-                            <details className="paper-abstract mt-3">
-                              <summary className="cursor-pointer text-xs font-medium text-cyan-300">Read abstract</summary>
-                              <p className="mt-3 text-sm leading-6 text-slate-400">{paper.abstract}</p>
-                            </details>
-                          )}
-
-                          <div className="mt-4 flex items-center gap-4">
-
-                            <span className="rounded-full bg-cyan-950 px-3 py-1 text-xs text-cyan-300">
-                              {paper.source}
+                    <div className="mt-5 grid gap-4 md:grid-cols-3">
+                      {researchAnalysis.plan.model_recommendations.map((model, idx) => (
+                        <div key={idx} className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950 p-5">
+                          <div>
+                            <span className="rounded-full bg-cyan-950/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-400">
+                              Candidate {idx + 1}
                             </span>
-
-                            {paper.url && (
-                              <a
-                                href={paper.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs text-cyan-400 hover:text-cyan-300"
-                              >
-                                View paper →
-                              </a>
-                            )}
-
+                            <h4 className="mt-2 font-semibold text-slate-100">
+                              {model.name}
+                            </h4>
+                            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                              {model.rationale}
+                            </p>
                           </div>
-
-                        </article>
-                      )
-                    )}
-
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* ANALYSIS */}
+                {/* METHODOLOGY & ANALYSIS */}
 
                 <div className="grid gap-6 lg:grid-cols-2">
 
                   <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
 
                     <p className="text-sm text-cyan-400">
-                      Paper Analysis
+                      Methodology Recommendations
                     </p>
 
                     <h3 className="mt-1 text-xl font-semibold">
-                      Methods Identified
+                      Pipeline Stages &amp; Approaches
                     </h3>
 
-                    <div className="mt-5 space-y-3">
-
-                      {Object.entries(
-                        researchAnalysis.analysis
-                          .method_distribution
-                      ).map(
-                        ([method, count]) => (
+                    {researchAnalysis.plan.methodology_recommendations && researchAnalysis.plan.methodology_recommendations.length > 0 ? (
+                      <div className="mt-5 space-y-3">
+                        {researchAnalysis.plan.methodology_recommendations.map((m, idx) => (
                           <div
-                            key={method}
-                            className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 p-3"
+                            key={idx}
+                            className="rounded-lg border border-slate-800 bg-slate-950 p-3"
                           >
-
-                            <span className="text-sm text-slate-300">
-                              {method}
-                            </span>
-
-                            <span className="rounded-full bg-cyan-950 px-3 py-1 text-xs text-cyan-300">
-                              {count}
-                            </span>
-
+                            <p className="text-xs font-semibold text-cyan-400">
+                              {m.stage}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-300">
+                              {m.details}
+                            </p>
                           </div>
-                        )
-                      )}
-
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-5 space-y-3">
+                        {Object.entries(
+                          researchAnalysis.analysis
+                            .method_distribution
+                        ).map(
+                          ([method, count]) => (
+                            <div
+                              key={method}
+                              className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 p-3"
+                            >
+                              <span className="text-sm text-slate-300">
+                                {method}
+                              </span>
+                              <span className="rounded-full bg-cyan-950 px-3 py-1 text-xs text-cyan-300">
+                                {count}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
@@ -1669,6 +1688,52 @@ export default function WorkspacePage() {
                   </div>
                 </div>
 
+                {/* CHALLENGES, NOVELTY & FUTURE WORK */}
+
+                {(researchAnalysis.plan.expected_challenges || researchAnalysis.plan.potential_novelty || researchAnalysis.plan.future_work) && (
+                  <div className="grid gap-6 lg:grid-cols-3">
+                    {researchAnalysis.plan.expected_challenges && researchAnalysis.plan.expected_challenges.length > 0 && (
+                      <div className="rounded-2xl border border-amber-900/40 bg-slate-900 p-6">
+                        <p className="text-sm text-amber-400">Risk Assessment</p>
+                        <h3 className="mt-1 text-lg font-semibold">Expected Challenges</h3>
+                        <ul className="mt-4 space-y-2">
+                          {researchAnalysis.plan.expected_challenges.map((ch, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
+                              <span className="font-bold text-amber-400">•</span>
+                              <span>{ch}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {researchAnalysis.plan.potential_novelty && (
+                      <div className="rounded-2xl border border-emerald-900/40 bg-slate-900 p-6">
+                        <p className="text-sm text-emerald-400">Research Impact</p>
+                        <h3 className="mt-1 text-lg font-semibold">Potential Novelty &amp; Contribution</h3>
+                        <p className="mt-4 text-xs leading-relaxed text-slate-300">
+                          {researchAnalysis.plan.potential_novelty}
+                        </p>
+                      </div>
+                    )}
+
+                    {researchAnalysis.plan.future_work && researchAnalysis.plan.future_work.length > 0 && (
+                      <div className="rounded-2xl border border-purple-900/40 bg-slate-900 p-6">
+                        <p className="text-sm text-purple-400">Extensions</p>
+                        <h3 className="mt-1 text-lg font-semibold">Future-Work Suggestions</h3>
+                        <ul className="mt-4 space-y-2">
+                          {researchAnalysis.plan.future_work.map((fw, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
+                              <span className="font-bold text-purple-400">•</span>
+                              <span>{fw}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ROADMAP */}
 
                 <div className="rounded-2xl border border-cyan-900/50 bg-slate-900 p-6">
@@ -1762,12 +1827,14 @@ export default function WorkspacePage() {
               </section>
             )}
 
-            {/* LITERATURE SEARCH — PAGINATED */}                    <section className="mt-10 border-t border-slate-800 pt-8">
+            {/* LITERATURE SEARCH — PAGINATED */}
+            <section className="mt-10 border-t border-slate-800 pt-8">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="text-sm text-cyan-400">Literature Search</p>
                   <h2 className="mt-1 text-2xl font-semibold">Search Academic Papers</h2>
                   <p className="mt-1 text-sm text-slate-400">Search directly for academic papers by entering keywords or a specific topic — Semantic Scholar & Crossref, 20-year window, citation-aware scoring.</p>
+                  <p className="mt-1 text-xs text-slate-500">Google Scholar public API is unavailable; verified citation counts from Semantic Scholar and Crossref are displayed.</p>
                 </div>
               </div>
 
@@ -1804,7 +1871,7 @@ export default function WorkspacePage() {
                         className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-400"
                       >
                         <option value="relevance">Relevance</option>
-                        <option value="citations">Most Cited</option>
+                        <option value="citations">Sort by Citations (Semantic Scholar / Crossref)</option>
                         <option value="year-desc">Newest First</option>
                         <option value="year-asc">Oldest First</option>
                       </select>
@@ -1830,7 +1897,11 @@ export default function WorkspacePage() {
                           </div>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                          {paper.citation_count > 0 && <span className="rounded-full bg-amber-950/40 px-2 py-0.5 font-medium text-amber-300">Citations: {paper.citation_count.toLocaleString()}</span>}
+                          {(paper.citation_count != null && paper.citation_count > 0) && (
+                            <span className="rounded-full bg-amber-950/40 px-2.5 py-0.5 font-medium text-amber-300">
+                              Citations: {paper.citation_count.toLocaleString()} · Source: {paper.citation_source || paper.source || 'Semantic Scholar / Crossref'}
+                            </span>
+                          )}
                           {paper.venue && <span className="text-slate-500">{paper.venue}</span>}
                           {paper.source && <span className="rounded-full bg-blue-950/40 px-2 py-0.5 text-blue-300">{paper.source}</span>}
                           {paper.doi && <span className="text-slate-600">DOI: {paper.doi}</span>}
@@ -2195,8 +2266,7 @@ export default function WorkspacePage() {
         )}
       </div>
 
-      {/* Research Assistant */}
-      {token && <ResearchAssistant />}
+
 
       {/* Footer Credit */}
       <footer className="fixed bottom-2 right-5 z-30 select-none pointer-events-none text-right">

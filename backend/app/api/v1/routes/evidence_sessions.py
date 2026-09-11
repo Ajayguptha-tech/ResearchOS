@@ -245,7 +245,7 @@ def add_item(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Document not found",
             )
-        if doc.project_id is not None and doc.project_id != sess.project_id:
+        if doc.project_id != sess.project_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Document does not belong to this project",

@@ -18,6 +18,32 @@ class DatasetRecommendationAgent:
         # Keyword-based recommendations with real URLs
         keyword_datasets = [
             {
+                "keywords": ["plant", "crop", "leaf", "agriculture", "botanical", "farming", "foliar"],
+                "datasets": [
+                    {
+                        "name": "PlantVillage Dataset",
+                        "purpose": "54,303 healthy and diseased plant leaf images categorized across 38 crop-disease pairs for deep learning classification.",
+                        "source": "Penn State / EPFL",
+                        "use": "Multi-class foliar disease classification and transfer learning",
+                        "url": "https://www.kaggle.com/datasets/emmarex/plantdisease",
+                    },
+                    {
+                        "name": "PlantDoc Dataset",
+                        "purpose": "2,598 laboratory and field leaf images across 13 plant species and 17 diseases with annotated bounding boxes.",
+                        "source": "IIT Mandi",
+                        "use": "Real-world field condition evaluation and lesion localization",
+                        "url": "https://github.com/pratikkayal/PlantDoc-Dataset",
+                    },
+                    {
+                        "name": "AI Challenger Agricultural Disease Dataset",
+                        "purpose": "50,000+ leaf images across 61 disease classes collected under diverse agricultural lighting and background environments.",
+                        "source": "AI Challenger",
+                        "use": "Complex outdoor background robustness and generalization testing",
+                        "url": "https://challenger.ai/",
+                    },
+                ],
+            },
+            {
                 "keywords": ["research", "literature", "paper", "citation", "academic"],
                 "datasets": [
                     {

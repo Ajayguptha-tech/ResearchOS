@@ -128,6 +128,8 @@ class PaperAnalyzerAgent:
                 )
 
             analyzed_papers.append({
+                "id": paper.get("id"),
+                "document_id": paper.get("document_id") or paper.get("id"),
                 "title": title,
                 "authors": authors,
                 "year": year,

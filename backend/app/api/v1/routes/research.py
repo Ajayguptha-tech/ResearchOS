@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
 from app.core.security import get_current_user
-from app.db.models import AnalysisResult
+from app.db.models import AnalysisResult, Project, ResearchDocument
 from app.services.agent_orchestrator import AgentOrchestrator
 from app.services.document_service import DocumentService
 
@@ -81,6 +81,18 @@ def search_literature(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@router.get("/literature/search")
+def search_literature_get(
+    query: str = Query(..., min_length=2),
+    max_results: int = Query(default=30, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
+    user_id: int = Depends(get_current_user),
+):
+    """GET endpoint for literature search."""
+    return search_literature(idea=query, max_results=max_results, page=page, per_page=per_page, _=user_id)
+
+
 @router.post("/analyze-local")
 def analyze_local_research(
     idea: str,
@@ -116,6 +128,97 @@ def analyze_local_research(
         return result
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/summarize-documents")
+def summarize_documents(
+    project_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user),
+):
+    """Summarize uploaded documents strictly for the current workspace context (project or global)."""
+    if project_id is not None:
+        project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user_id).first()
+        if not project:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        docs = (
+            db.query(ResearchDocument)
+            .filter(
+                ResearchDocument.owner_id == user_id,
+                ResearchDocument.project_id == project_id,
+            )
+            .order_by(ResearchDocument.created_at.desc())
+            .all()
+        )
+        scope_name = f"Project: {project.title}"
+    else:
+        docs = (
+            db.query(ResearchDocument)
+            .filter(
+                ResearchDocument.owner_id == user_id,
+                ResearchDocument.project_id.is_(None),
+            )
+            .order_by(ResearchDocument.created_at.desc())
+            .all()
+        )
+        scope_name = "Main Workspace"
+
+    if not docs:
+        return {
+            "status": "empty",
+            "scope": scope_name,
+            "count": 0,
+            "summaries": [],
+            "message": "No documents uploaded in this workspace yet. Upload documents to generate summaries.",
+        }
+
+    from ai.agents.paper_analyzer_agent import PaperAnalyzerAgent
+
+    papers = [
+        {
+            "title": doc.filename,
+            "filename": doc.filename,
+            "document_id": doc.id,
+            "abstract": doc.extracted_text[:8000],
+            "extracted_characters": len(doc.extracted_text or ""),
+        }
+        for doc in docs
+    ]
+
+    analyzer = PaperAnalyzerAgent()
+    analysis = analyzer.analyze(papers)
+
+    summaries = []
+    for paper in analysis.get("papers", []):
+        raw_findings = paper.get("findings", [])
+        clean_findings = [
+            f for f in raw_findings
+            if not f.lower().startswith("no specific findings")
+        ]
+
+        raw_methods = paper.get("methods", [])
+        clean_methods = [
+            m for m in raw_methods
+            if not m.lower().startswith("method not explicitly")
+        ]
+
+        summaries.append({
+            "document_id": paper.get("document_id"),
+            "title": paper.get("title") or paper.get("filename"),
+            "filename": paper.get("filename"),
+            "extracted_characters": paper.get("extracted_characters", 0),
+            "summary": paper.get("abstract_summary", ""),
+            "key_findings": clean_findings,
+            "methodology": clean_methods,
+        })
+
+    return {
+        "status": "success",
+        "scope": scope_name,
+        "count": len(summaries),
+        "summaries": summaries,
+        "message": f"Successfully summarized {len(summaries)} document(s) in {scope_name}.",
+    }
 
 
 @router.post("/save-analysis")

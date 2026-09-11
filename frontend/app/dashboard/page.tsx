@@ -32,8 +32,7 @@ export default function DashboardPage() {
           .find((r): r is PromiseRejectedResult => r.status === 'rejected' && r.reason instanceof Error && (r.reason.message === 'Invalid token' || r.reason.message === 'Authentication required'));
         if (firstAuthFailure) {
           localStorage.removeItem('access_token');
-          setError('');
-          setLoading(false);
+          window.location.href = '/login';
           return;
         }
         if (profileData.status === 'fulfilled') setUserProfile(profileData.value);
@@ -54,6 +53,23 @@ export default function DashboardPage() {
   }, []);
 
   const displayName = userProfile?.name || 'there';
+
+  if (loading) {
+    return (
+      <main className="auth-page flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: "#664bc5" }}>
+            RESEARCHOS
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-1.5">
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="research-shell min-h-screen bg-slate-950 text-slate-50">

@@ -297,6 +297,9 @@ class LiteratureSearchAgent:
                             ),
                             "doi": external_ids.get("DOI", ""),
                             "citation_count": citation_count,
+                            "citation_source": "Semantic Scholar",
+                            "google_scholar_verified": False,
+                            "google_scholar_citations": None,
                             "venue": paper.get("venue") or "",
                             "source": "Semantic Scholar",
                             "citations_available": citation_count > 0,
@@ -456,6 +459,9 @@ class LiteratureSearchAgent:
                             ),
                             "doi": item.get("DOI") or "",
                             "citation_count": citation_count,
+                            "citation_source": "Crossref",
+                            "google_scholar_verified": False,
+                            "google_scholar_citations": None,
                             "venue": (
                                 item.get(
                                     "container-title",
@@ -523,9 +529,16 @@ class LiteratureSearchAgent:
                 continue
 
             doi = (paper.get("doi") or "").strip().lower()
-            dedupe_key = (
-                f"doi:{doi}" if doi else f"title:{normalized}"
-            )
+            if doi:
+                dedupe_key = f"doi:{doi}"
+            else:
+                first_author = ""
+                authors = paper.get("authors") or []
+                if authors and isinstance(authors, list):
+                    first_author = re.sub(r"[^a-z0-9]+", "", str(authors[0]).lower())
+                year = paper.get("year") or ""
+                dedupe_key = f"title:{normalized}|year:{year}|author:{first_author}"
+
             if dedupe_key in seen:
                 continue
 

@@ -52,13 +52,15 @@ class PaperDraftResponse(BaseModel):
         doc_ids = []
         paper_ids = []
         try:
-            doc_ids = json.loads(draft.source_document_ids) if draft.source_document_ids else []
+            val = json.loads(draft.source_document_ids) if draft.source_document_ids else []
+            doc_ids = val if isinstance(val, list) else []
         except (json.JSONDecodeError, TypeError):
-            pass
+            doc_ids = []
         try:
-            paper_ids = json.loads(draft.source_paper_ids) if draft.source_paper_ids else []
+            val_p = json.loads(draft.source_paper_ids) if draft.source_paper_ids else []
+            paper_ids = val_p if isinstance(val_p, list) else []
         except (json.JSONDecodeError, TypeError):
-            pass
+            paper_ids = []
 
         return cls(
             id=draft.id,

@@ -399,6 +399,11 @@ RULES:
 14. For math/science questions, show your reasoning clearly."""
 
 
+_last_ollama_check_time: float = 0.0
+_cached_ollama_model: str | None = None
+_OLLAMA_CHECK_COOLDOWN: float = 10.0
+
+
 def _resolve_ollama_model() -> str | None:
     """Return the local LLM model to use, or None when it cannot be determined.
 
@@ -407,12 +412,18 @@ def _resolve_ollama_model() -> str | None:
     (never a made-up name) when Ollama is unreachable or has no models, so
     callers fall back to the deterministic answer path.
     """
+    global _last_ollama_check_time, _cached_ollama_model
     if settings.local_llm_model and settings.local_llm_model.strip():
         return settings.local_llm_model.strip()
+    import time
+    now = time.time()
+    if now - _last_ollama_check_time < _OLLAMA_CHECK_COOLDOWN:
+        return _cached_ollama_model
+    _last_ollama_check_time = now
     try:
         tags_response = httpx.get(
             f"{settings.local_llm_url}/api/tags",
-            timeout=5.0,
+            timeout=1.0,
         )
         if tags_response.status_code == 200:
             models = (tags_response.json() or {}).get("models") or []
@@ -426,13 +437,15 @@ def _resolve_ollama_model() -> str | None:
                     "[Assistant] No LOCAL_LLM_MODEL configured; using first available Ollama model: %s",
                     available[0],
                 )
-                return available[0]
+                _cached_ollama_model = available[0]
+                return _cached_ollama_model
         logger.info(
             "[Assistant] Ollama reachable but reported no models. "
             "Set LOCAL_LLM_MODEL in backend/.env to pick an installed model."
         )
     except Exception as exc:
-        logger.info("[Assistant] Could not list Ollama models: %s", exc)
+        logger.debug("[Assistant] Could not list Ollama models: %s", exc)
+    _cached_ollama_model = None
     return None
 
 

@@ -8,12 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 logger = logging.getLogger(__name__)
 
 from app.api.v1.routes import (
-    assistant,
     auth,
     communications,
     evidence_sessions,
     followups,
-    law,
     notifications,
     paper_drafts,
     papers,
@@ -172,21 +170,15 @@ app.include_router(
 )
 
 app.include_router(
-    law.router,
-    prefix="/api/v1/law",
-    tags=["law"],
+    communications.router,
+    prefix="/api/v1/communications",
+    tags=["communications"],
 )
 
 app.include_router(
     reminders.router,
     prefix="/api/v1/reminders",
     tags=["reminders"],
-)
-
-app.include_router(
-    assistant.router,
-    prefix="/api/v1/assistant",
-    tags=["assistant"],
 )
 
 app.include_router(

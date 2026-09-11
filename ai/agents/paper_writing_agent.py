@@ -286,15 +286,26 @@ class PaperWritingAgent:
             "Based on the analysis of available sources, the following research gaps "
             "have been identified:\n"
         )
-        if len(sources) >= 3:
-            parts.append(
-                "- Limited cross-study comparison of methodologies\n"
-                "- Insufficient validation across diverse datasets\n"
-                "- Need for longitudinal studies in this domain\n"
-            )
+        extracted_gaps = []
+        for src in sources:
+            content = src.get("content", "") or src.get("abstract", "")
+            for line in content.split("\n"):
+                lower = line.lower()
+                if any(w in lower for w in ["limitation", "future work", "open challenge", "gap", "lack of", "remains to be"]):
+                    cleaned = line.strip()
+                    if 20 < len(cleaned) < 250:
+                        extracted_gaps.append(f"- {cleaned}")
+                        if len(extracted_gaps) >= 3:
+                            break
+            if len(extracted_gaps) >= 3:
+                break
+
+        if extracted_gaps:
+            for g in extracted_gaps:
+                parts.append(f"{g}\n")
         else:
             parts.append(
-                "- [More source materials needed for comprehensive gap analysis]\n"
+                "- [No explicit research gaps documented in the provided source texts. Additional domain literature required.]\n"
             )
 
         # ---- CONCLUSION ----

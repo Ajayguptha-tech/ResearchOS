@@ -150,27 +150,51 @@ def generate_draft(
     draft = _get_draft_for_user(db, draft_id, user_id)
 
     # Gather source documents
-    doc_ids = json.loads(draft.source_document_ids) if draft.source_document_ids else []
-    paper_ids = json.loads(draft.source_paper_ids) if draft.source_paper_ids else []
+    try:
+        raw_docs = json.loads(draft.source_document_ids) if draft.source_document_ids else []
+        doc_ids = raw_docs if isinstance(raw_docs, list) else []
+    except (json.JSONDecodeError, TypeError):
+        doc_ids = []
+
+    try:
+        raw_papers = json.loads(draft.source_paper_ids) if draft.source_paper_ids else []
+        paper_ids = raw_papers if isinstance(raw_papers, list) else []
+    except (json.JSONDecodeError, TypeError):
+        paper_ids = []
 
     source_contexts = []
 
-    # Fetch document content
-    for doc_id in doc_ids:
-        doc = (
+    # Fetch document content - strictly scoped to this project
+    if doc_ids:
+        docs = (
             db.query(ResearchDocument)
             .filter(
-                ResearchDocument.id == doc_id,
+                ResearchDocument.id.in_(doc_ids),
                 ResearchDocument.owner_id == user_id,
+                ResearchDocument.project_id == draft.project_id,
             )
-            .first()
+            .all()
         )
-        if doc:
-            source_contexts.append({
-                "type": "document",
-                "filename": doc.filename,
-                "content": doc.extracted_text[:6000],
-            })
+    else:
+        # Use all documents belonging to this project if none explicitly selected
+        docs = (
+            db.query(ResearchDocument)
+            .filter(
+                ResearchDocument.owner_id == user_id,
+                ResearchDocument.project_id == draft.project_id,
+            )
+            .all()
+        )
+
+    # Persist the actual scoped source document IDs used
+    draft.source_document_ids = json.dumps([doc.id for doc in docs])
+
+    for doc in docs:
+        source_contexts.append({
+            "type": "document",
+            "filename": doc.filename,
+            "content": doc.extracted_text[:6000],
+        })
 
     # Fetch paper metadata
     for pid in paper_ids:

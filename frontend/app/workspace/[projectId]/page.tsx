@@ -9,7 +9,8 @@ import {
   updateResearchPaper,
   listProjectDocuments,
   uploadResearchDocument,
-  sendAssistantMessage,
+  summarizeDocuments,
+  DocumentSummaryItem,
   listProjects,
   analyzeLocalResearch,
   saveAnalysis,
@@ -47,7 +48,7 @@ import {
   PaperDraft,
 } from '../../../lib/api';
 
-type Section = 'overview' | 'documents' | 'editor' | 'assistant' | 'analysis' | 'references' | 'evidence' | 'reminders' | 'writing';
+type Section = 'overview' | 'documents' | 'editor' | 'analysis' | 'references' | 'evidence' | 'reminders' | 'writing';
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: '◈' },
@@ -55,7 +56,6 @@ const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: 'editor', label: 'Paper Editor', icon: '✏️' },
   { key: 'writing', label: 'Paper Writing Agent', icon: '🤖' },
   { key: 'analysis', label: 'AI Analysis', icon: '✦' },
-  { key: 'assistant', label: 'Research Assistant', icon: '💬' },
   { key: 'references', label: 'References', icon: '📚' },
   { key: 'evidence', label: 'Evidence Sessions', icon: '🔍' },
   { key: 'reminders', label: 'Reminders', icon: '⏰' },
@@ -66,12 +66,7 @@ export default function ProjectWorkspacePage() {
   const router = useRouter();
   const projectId = Number(params.projectId);
 
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('access_token');
-    }
-    return null;
-  });
+  const [token, setToken] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeSection, setActiveSection] = useState<Section>('overview');
@@ -100,10 +95,12 @@ export default function ProjectWorkspacePage() {
   const [autoSaving, setAutoSaving] = useState(false);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // AI Analysis
+  // AI Analysis & Document Summaries
   const [analysisIdea, setAnalysisIdea] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [docSummaries, setDocSummaries] = useState<DocumentSummaryItem[] | null>(null);
+  const [summarizingDocs, setSummarizingDocs] = useState(false);
 
   // Paper Writing Agent
   const [drafts, setDrafts] = useState<PaperDraft[]>([]);
@@ -114,14 +111,6 @@ export default function ProjectWorkspacePage() {
   const [selectedPaperIds, setSelectedPaperIds] = useState<number[]>([]);
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
-
-  // Assistant
-  const [assistantMessages, setAssistantMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; source?: string }>>([
-    { role: 'assistant', text: 'Hello! I\'m your **Research Assistant** for this project. I have access to your project documents, references, and analyses.\n\nI can help you with:\n- Summarizing uploaded documents\n- Identifying research gaps\n- Explaining methodology\n- Reviewing your paper\n- Suggesting next steps\n\nWhat would you like to know?' },
-  ]);
-  const [assistantInput, setAssistantInput] = useState('');
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const assistantEndRef = useRef<HTMLDivElement>(null);
 
   // References
   const [references, setReferences] = useState<Reference[]>([]);
@@ -207,7 +196,6 @@ export default function ProjectWorkspacePage() {
             loadDocuments(accessToken, projectId),
             loadPaper(accessToken, projectId),
             loadReminders(accessToken),
-            loadAnalyses(accessToken, projectId),
             loadReferences(accessToken, projectId),
             loadEvidenceSessions(accessToken, projectId),
             loadDrafts(accessToken, projectId),
@@ -487,16 +475,12 @@ export default function ProjectWorkspacePage() {
   useEffect(() => {
     const saved = localStorage.getItem('access_token');
     if (!saved) {
-      setLoading(false);
+      router.replace('/login');
       return;
     }
     setToken(saved);
     loadData(saved);
   }, [projectId]);
-
-  useEffect(() => {
-    assistantEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [assistantMessages]);
 
   // === DOCUMENT UPLOAD ===
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
@@ -550,28 +534,18 @@ export default function ProjectWorkspacePage() {
     }
   }
 
-  // === ASSISTANT ===
-  async function handleAssistantSend(e: FormEvent) {
-    e.preventDefault();
-    const text = assistantInput.trim();
-    if (!text || assistantLoading) return;
-    setAssistantMessages((prev) => [...prev, { role: 'user', text }]);
-    setAssistantInput('');
-    setAssistantLoading(true);
+  // === SUMMARIZE DOCUMENTS ===
+  async function handleSummarizeDocuments() {
+    if (!token) return;
+    setSummarizingDocs(true);
+    setError('');
     try {
-      // Build conversation history so follow-up questions keep their context
-      const history = assistantMessages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({ role: m.role, content: m.text }))
-        .slice(-10);
-      const response = token
-        ? await sendAssistantMessage(token, text, projectId, history)
-        : { reply: 'Please sign in to use the Research Assistant.', source: 'none' };
-      setAssistantMessages((prev) => [...prev, { role: 'assistant', text: response.reply, source: response.source }]);
-    } catch {
-      setAssistantMessages((prev) => [...prev, { role: 'assistant', text: 'Sorry, I couldn\'t process your request right now.' }]);
+      const res = await summarizeDocuments(token, projectId);
+      setDocSummaries(res.summaries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to summarize documents.');
     } finally {
-      setAssistantLoading(false);
+      setSummarizingDocs(false);
     }
   }
 
@@ -631,51 +605,8 @@ export default function ProjectWorkspacePage() {
 
   const wordCount = paperContent.trim() ? paperContent.trim().split(/\s+/).length : 0;
 
-  // === AUTH SCREEN ===
-  if (!token) {
-    return (
-      <main className="auth-page">
-        <div className="flex min-h-screen items-center justify-center px-5">
-          <div className="w-full max-w-md">
-            <div className="mb-8 text-center">
-              <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: '#664bc5' }}>RESEARCHOS</p>
-              <h1 className="mt-3 text-2xl font-bold tracking-tight" style={{ color: '#1b2440' }}>Project Workspace</h1>
-              <p className="mt-2 text-sm" style={{ color: '#68728a' }}>Sign in to access your research project.</p>
-            </div>
-            <div className="rounded-2xl border border-[#e6e0f8] bg-white p-8 shadow-lg" style={{ boxShadow: '0 20px 50px rgba(67, 47, 137, 0.08)' }}>
-              <form onSubmit={handleAuth} className="space-y-5">
-                {isRegistering && (
-                  <div>
-                    <label className="mb-2 block text-sm font-medium" style={{ color: '#4e5871' }}>Name</label>
-                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required className="w-full rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none" style={{ color: '#1d2742' }} />
-                  </div>
-                )}
-                <div>
-                  <label className="mb-2 block text-sm font-medium" style={{ color: '#4e5871' }}>Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="w-full rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none" style={{ color: '#1d2742' }} />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium" style={{ color: '#4e5871' }}>Password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required minLength={8} className="w-full rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none" style={{ color: '#1d2742' }} />
-                </div>
-                {error && <div className="rounded-xl border border-[rgba(180,76,76,0.25)] bg-[rgba(180,76,76,0.06)] px-4 py-3 text-sm" style={{ color: '#b44c4c' }}>{error}</div>}
-                <button type="submit" disabled={authLoading} className="w-full rounded-xl bg-[#6247bf] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#5538a8] disabled:opacity-50" style={{ boxShadow: '0 9px 18px rgba(97, 70, 190, 0.18)' }}>
-                  {authLoading ? 'Signing in…' : isRegistering ? 'Create Account' : 'Sign In'}
-                </button>
-              </form>
-              <div className="mt-4 flex items-center justify-between text-sm">
-                <button onClick={() => setIsRegistering(!isRegistering)} className="font-medium" style={{ color: '#664bc5' }}>{isRegistering ? 'Already have an account? Sign in' : 'Create Account'}</button>
-                {!isRegistering && <button onClick={() => router.push('/forgot-password')} className="font-medium" style={{ color: '#664bc5' }}>Forgot password?</button>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  // === LOADING ===
-  if (loading) {
+  // === LOADING / AUTH REDIRECT ===
+  if (loading || !token) {
     return (
       <main className="research-shell workspace-page min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -900,51 +831,166 @@ export default function ProjectWorkspacePage() {
             {activeSection === 'analysis' && (
               <section className="space-y-6">
                 <div className="rounded-2xl border border-[#e7e2fa] bg-white p-6" style={{ boxShadow: '0 12px 30px rgba(62, 42, 132, 0.055)' }}>
-                  <h2 className="text-xl font-semibold" style={{ color: '#1b2440' }}>AI Research Analysis</h2>
-                  <p className="mt-1 text-sm" style={{ color: '#68728a' }}>Analyze your research idea using uploaded documents.</p>
-
-                  <form onSubmit={(e) => { e.preventDefault(); }} className="mt-5">
-                    <textarea
-                      value={analysisIdea}
-                      onChange={(e) => setAnalysisIdea(e.target.value)}
-                      placeholder="Describe your research idea…"
-                      rows={4}
-                      className="w-full resize-none rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#7c60d6]"
-                      style={{ color: '#1d2742' }}
-                    />
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 className="text-xl font-semibold" style={{ color: '#1b2440' }}>AI Research Analysis</h2>
+                      <p className="mt-1 text-sm" style={{ color: '#68728a' }}>Analyze project documents and synthesize evidence-backed insights.</p>
+                    </div>
                     <button
-                      onClick={async () => {
-                        if (!token || analysisIdea.trim().length < 5) return;
-                        setAnalyzing(true);
-                        setError('');
-                        try {
-                          const result = await analyzeLocalResearch(token, analysisIdea.trim(), undefined, projectId);
-                          setAnalysisResult(result);
-                          // Save analysis for persistence
-                          if (token && projectId) {
-                            const docIds = (result._documents_used || []).map((d: any) => d.id).filter(Boolean);
-                            try {
-                              await saveAnalysis(token, projectId, analysisIdea.trim(), docIds, JSON.stringify(result));
-                            } catch {}
-                          }
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : 'Analysis failed.');
-                          setAnalysisResult(null);
-                        } finally {
-                          setAnalyzing(false);
-                        }
-                      }}
-                      disabled={analyzing || !analysisIdea.trim()}
-                      className="mt-3 rounded-xl bg-[#6247bf] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#5538a8] disabled:opacity-50"
+                      onClick={handleSummarizeDocuments}
+                      disabled={summarizingDocs || documents.length === 0}
+                      className="inline-flex items-center justify-center rounded-xl bg-[#6247bf] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#5538a8] disabled:opacity-50"
                     >
-                      {analyzing ? 'Analyzing…' : 'Analyze with AI'}
+                      {summarizingDocs ? 'Summarizing Documents…' : `Summarize Documents (${documents.length})`}
                     </button>
-                  </form>
+                  </div>
+
+                  {/* Clean Idle State */}
+                  {!analysisResult && !docSummaries && !analyzing && !summarizingDocs && (
+                    <div className="mt-6 rounded-xl border border-dashed border-[#e0d9f4] bg-[#fdfcff] p-8 text-center">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(105,76,197,0.1)] text-xl" style={{ color: '#664bc5' }}>✦</div>
+                      <h3 className="text-base font-semibold" style={{ color: '#1b2440' }}>Select an analysis action to begin.</h3>
+                      <p className="mt-1 text-sm max-w-md mx-auto" style={{ color: '#68728a' }}>
+                        Click <strong>Summarize Documents</strong> to generate concise, grounded summaries, key findings, and methodology from this project&apos;s documents without entering any prompt. Or enter a research idea below for full pipeline analysis.
+                      </p>
+                      <div className="mt-5 flex flex-wrap justify-center gap-3">
+                        <button
+                          onClick={handleSummarizeDocuments}
+                          disabled={documents.length === 0}
+                          className="rounded-xl bg-[#6247bf] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5538a8] disabled:opacity-50"
+                        >
+                          Summarize Documents ({documents.length})
+                        </button>
+                      </div>
+                      {documents.length === 0 && (
+                        <p className="mt-3 text-xs text-amber-600">
+                          Upload documents in the <strong>Documents</strong> tab to enable document summarization.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Deep Research Idea Form */}
+                  <div className="mt-6 border-t border-[#f0ebfa] pt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Deep Research Analysis (Optional)</p>
+                    <form onSubmit={(e) => { e.preventDefault(); }} className="mt-3">
+                      <textarea
+                        value={analysisIdea}
+                        onChange={(e) => setAnalysisIdea(e.target.value)}
+                        placeholder="Describe a specific research problem or question to analyze against your project documents…"
+                        rows={3}
+                        className="w-full resize-none rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#7c60d6]"
+                        style={{ color: '#1d2742' }}
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!token || analysisIdea.trim().length < 5) return;
+                          setAnalyzing(true);
+                          setError('');
+                          try {
+                            const result = await analyzeLocalResearch(token, analysisIdea.trim(), undefined, projectId);
+                            setAnalysisResult(result);
+                            if (token && projectId) {
+                              const docIds = (result._documents_used || []).map((d: any) => d.id).filter(Boolean);
+                              try {
+                                await saveAnalysis(token, projectId, analysisIdea.trim(), docIds, JSON.stringify(result));
+                              } catch {}
+                            }
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Analysis failed.');
+                            setAnalysisResult(null);
+                          } finally {
+                            setAnalyzing(false);
+                          }
+                        }}
+                        disabled={analyzing || !analysisIdea.trim()}
+                        className="mt-3 rounded-xl border border-[#6247bf] bg-white px-5 py-2.5 text-sm font-semibold text-[#6247bf] transition hover:bg-[rgba(105,76,197,0.06)] disabled:opacity-50"
+                      >
+                        {analyzing ? 'Analyzing Idea…' : 'Analyze Research Idea'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Loading states */}
+                  {summarizingDocs && (
+                    <div className="mt-6 rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-6 text-center">
+                      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#e0d9f4] border-t-[#6247bf]" />
+                      <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>Summarizing project documents…</p>
+                      <p className="mt-1 text-xs" style={{ color: '#68728a' }}>Extracting title, summary, key findings, and methodology from project documents only.</p>
+                    </div>
+                  )}
 
                   {analyzing && (
                     <div className="mt-6 rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-6 text-center">
                       <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#e0d9f4] border-t-[#6247bf]" />
                       <p className="text-sm" style={{ color: '#68728a' }}>Analyzing your documents and research idea…</p>
+                    </div>
+                  )}
+
+                  {/* Scoped Document Summaries Result */}
+                  {docSummaries && !summarizingDocs && (
+                    <div className="mt-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold" style={{ color: '#1b2440' }}>
+                          📄 Document Summaries ({docSummaries.length})
+                        </h3>
+                        <button
+                          onClick={() => setDocSummaries(null)}
+                          className="text-xs font-medium text-slate-400 hover:text-slate-600"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      {docSummaries.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-[#e0d9f4] bg-[#fdfcff] p-6 text-center">
+                          <p className="text-sm" style={{ color: '#68728a' }}>No documents found in this project to summarize.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {docSummaries.map((ds) => (
+                            <div key={ds.document_id} className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="font-semibold text-sm" style={{ color: '#1b2440' }}>{ds.title}</h4>
+                                  <p className="mt-0.5 text-xs text-slate-400">{ds.filename} · {ds.extracted_characters.toLocaleString()} characters extracted</p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Project Doc #{ds.document_id}</span>
+                              </div>
+                              {ds.summary && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Summary</p>
+                                  <p className="mt-1 text-xs leading-relaxed" style={{ color: '#4e5871' }}>{ds.summary}</p>
+                                </div>
+                              )}
+                              {ds.key_findings && ds.key_findings.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Key Findings</p>
+                                  <ul className="mt-1 space-y-1">
+                                    {ds.key_findings.map((f, i) => (
+                                      <li key={i} className="flex items-start gap-2 text-xs" style={{ color: '#4e5871' }}>
+                                        <span className="mt-0.5 text-[#664bc5]">•</span>
+                                        <span>{f}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {ds.methodology && ds.methodology.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Methodology</p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {ds.methodology.map((m, i) => (
+                                      <span key={i} className="rounded-full bg-[rgba(105,76,197,0.08)] px-2.5 py-0.5 text-xs font-medium" style={{ color: '#664bc5' }}>
+                                        {m}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -969,76 +1015,71 @@ export default function ProjectWorkspacePage() {
                         </div>
                       )}
 
-                      {/* Document Summaries */}
-                      {analysisResult.analysis?.papers?.length > 0 && (
+                      {/* Research Problem & Objectives */}
+                      {analysisResult.plan && (
                         <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>📄 Document Summaries ({analysisResult.analysis.papers.length})</h3>
-                          <div className="mt-3 space-y-3">
-                            {analysisResult.analysis.papers.map((p: any, i: number) => (
+                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🎯 Research Problem &amp; Objectives</h3>
+                          {analysisResult.plan.problem_understanding && (
+                            <p className="mt-2 text-sm leading-relaxed" style={{ color: '#4e5871' }}>
+                              {analysisResult.plan.problem_understanding}
+                            </p>
+                          )}
+                          {analysisResult.plan.objectives?.length > 0 && (
+                            <div className="mt-3">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Objectives</p>
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                {analysisResult.plan.objectives.map((obj: string, i: number) => (
+                                  <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-3">
+                                    <p className="text-[10px] font-bold text-[#6247bf]">OBJECTIVE {i + 1}</p>
+                                    <p className="mt-1 text-xs text-[#4e5871]">{obj}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {analysisResult.plan.research_questions?.length > 0 && (
+                            <div className="mt-4">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Core Research Questions</p>
+                              <div className="space-y-1.5">
+                                {analysisResult.plan.research_questions.map((rq: string, i: number) => (
+                                  <div key={i} className="flex items-start gap-2 text-xs" style={{ color: '#4e5871' }}>
+                                    <span className="shrink-0 rounded-full bg-[rgba(105,76,197,0.1)] px-2 py-0.5 font-bold text-[#6247bf]">RQ{i + 1}</span>
+                                    <span>{rq}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Model & Algorithm Recommendations */}
+                      {analysisResult.plan?.model_recommendations?.length > 0 && (
+                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
+                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🤖 Recommended Models &amp; Algorithms</h3>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                            {analysisResult.plan.model_recommendations.map((m: any, i: number) => (
                               <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-4">
-                                <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>{p.title}</p>
-                                {p.authors?.length > 0 && <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>Authors: {p.authors.join(', ')}</p>}
-                                {p.extracted_characters > 0 && <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>{p.extracted_characters.toLocaleString()} characters extracted</p>}
-                                {p.abstract_summary && <p className="mt-2 text-xs leading-relaxed" style={{ color: '#68728a' }}>{p.abstract_summary}</p>}
-                                {p.methods?.length > 0 && !p.methods[0].includes('not explicitly') && (
-                                  <div className="mt-2 flex flex-wrap gap-1">
-                                    {p.methods.map((m: string, j: number) => (
-                                      <span key={j} className="rounded-full bg-[rgba(105,76,197,0.08)] px-2 py-0.5 text-xs" style={{ color: '#664bc5' }}>{m}</span>
-                                    ))}
-                                  </div>
-                                )}
-                                {p.findings?.length > 0 && !p.findings[0].startsWith('No specific') && (
-                                  <div className="mt-2">
-                                    <p className="text-xs font-medium" style={{ color: '#1b2440' }}>Key Findings:</p>
-                                    {p.findings.map((f: string, j: number) => (
-                                      <p key={j} className="mt-1 text-xs" style={{ color: '#68728a' }}>• {f}</p>
-                                    ))}
-                                  </div>
-                                )}
-                                {p.limitations?.length > 0 && !p.limitations[0].startsWith('No explicit') && (
-                                  <div className="mt-2">
-                                    <p className="text-xs font-medium" style={{ color: '#1b2440' }}>Limitations:</p>
-                                    {p.limitations.map((l: string, j: number) => (
-                                      <p key={j} className="mt-1 text-xs" style={{ color: '#68728a' }}>• {l}</p>
-                                    ))}
-                                  </div>
-                                )}
+                                <span className="rounded-full bg-[rgba(105,76,197,0.08)] px-2 py-0.5 text-[10px] font-semibold text-[#6247bf]">
+                                  Candidate {i + 1}
+                                </span>
+                                <p className="mt-2 text-sm font-semibold" style={{ color: '#1b2440' }}>{m.name}</p>
+                                <p className="mt-1 text-xs leading-relaxed" style={{ color: '#68728a' }}>{m.rationale}</p>
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      {/* Literature Results */}
-                      {analysisResult.literature?.results?.length > 0 && (
+                      {/* Methodology Recommendations */}
+                      {analysisResult.plan?.methodology_recommendations?.length > 0 && (
                         <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>📚 Literature ({analysisResult.literature.results.length} papers)</h3>
-                          <div className="mt-3 space-y-3">
-                            {analysisResult.literature.results.slice(0, 8).map((p: any, i: number) => (
-                              <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-4">
-                                <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>{p.title}</p>
-                                {p.authors?.length > 0 && <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>{p.authors.join(', ')}</p>}
-                                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                                  {p.year && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">{p.year}</span>}
-                                  {(p.citation_count != null && p.citation_count > 0) && (
-                                    <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Citations: {p.citation_count.toLocaleString()}</span>
-                                  )}
-                                  {p.relevance_score != null && (
-                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Score: {p.relevance_score}/100</span>
-                                  )}
-                                  {p.source && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-600">{p.source}</span>}
-                                </div>
-                                {p.score_explanation && (
-                                  <div className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
-                                    <span>Citation impact: {p.score_explanation.citation_impact}</span>
-                                    {' · '}
-                                    <span>Recency: {p.score_explanation.recency}</span>
-                                    {' · '}
-                                    <span>Relevance: {p.score_explanation.topic_relevance}</span>
-                                    {p.score_explanation.citations > 0 && <span>{' · '}Source: {p.score_explanation.source}</span>}
-                                  </div>
-                                )}
-                                {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs font-semibold" style={{ color: '#664bc5' }}>Read Paper →</a>}
+                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>⚙️ Methodology Recommendations</h3>
+                          <div className="mt-3 space-y-2">
+                            {analysisResult.plan.methodology_recommendations.map((m: any, i: number) => (
+                              <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-3">
+                                <p className="text-xs font-semibold text-[#6247bf]">{m.stage}</p>
+                                <p className="mt-1 text-xs" style={{ color: '#4e5871' }}>{m.details}</p>
                               </div>
                             ))}
                           </div>
@@ -1129,67 +1170,47 @@ export default function ProjectWorkspacePage() {
                           </ol>
                         </div>
                       )}
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
 
-            {/* === RESEARCH ASSISTANT === */}
-            {activeSection === 'assistant' && (
-              <section className="rounded-2xl border border-[#e7e2fa] bg-white overflow-hidden" style={{ boxShadow: '0 12px 30px rgba(62, 42, 132, 0.055)' }}>
-                <div className="research-assistant-header">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'rgba(105, 76, 197, 0.1)', color: '#664bc5' }}>✦</div>
-                    <div>
-                      <h3 className="text-sm font-bold" style={{ color: '#1b2440' }}>Research Assistant</h3>
-                      <p className="text-xs" style={{ color: '#8790a4' }}>Project-aware · {project.title}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setAssistantMessages([{ role: 'assistant', text: 'Chat cleared. How can I help with your research?' }])} className="text-xs font-medium" style={{ color: '#664bc5' }}>Clear chat</button>
-                </div>
-
-                <div className="research-assistant-messages" style={{ height: '420px' }}>
-                  {assistantMessages.map((msg, idx) => (
-                    <div key={idx} className={`research-assistant-msg ${msg.role}`}>
-                      <div className="research-assistant-bubble">
-                        <p style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
-                        {'source' in msg && msg.source && msg.role === 'assistant' && (
-                          <p className="mt-2 border-t border-slate-200 pt-1.5 text-[10px] italic" style={{ color: '#94a3b8' }}>
-                            Source: {msg.source}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {assistantLoading && (
-                    <div className="research-assistant-msg assistant">
-                      <div className="research-assistant-bubble">
-                        <div className="flex items-center gap-1.5 py-1">
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
+                      {/* Challenges, Novelty & Future Work */}
+                      {(analysisResult.plan?.expected_challenges || analysisResult.plan?.potential_novelty || analysisResult.plan?.future_work) && (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          {analysisResult.plan?.expected_challenges?.length > 0 && (
+                            <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 p-4">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Risk Assessment</p>
+                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Expected Challenges</h4>
+                              <ul className="mt-2 space-y-1.5 text-xs text-slate-600">
+                                {analysisResult.plan.expected_challenges.map((ch: string, idx: number) => (
+                                  <li key={idx} className="flex items-start gap-1.5">
+                                    <span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                    <span>{ch}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {analysisResult.plan?.potential_novelty && (
+                            <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 p-4">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Innovation</p>
+                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Potential Novelty</h4>
+                              <p className="mt-2 text-xs leading-relaxed text-slate-600">{analysisResult.plan.potential_novelty}</p>
+                            </div>
+                          )}
+                          {analysisResult.plan?.future_work && (
+                            <div className="rounded-xl border border-blue-200/60 bg-blue-50/40 p-4">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Looking Forward</p>
+                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Future Work</h4>
+                              <p className="mt-2 text-xs leading-relaxed text-slate-600">{analysisResult.plan.future_work}</p>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
-                  <div ref={assistantEndRef} />
                 </div>
-
-                <div className="research-assistant-suggestions">
-                  {['Summarize my uploaded papers', 'What are the research gaps?', 'What methodology is used?', 'What are the limitations?', 'What should I do next?', 'Show my references', 'Explain this project simply', 'What evidence do I have?'].map((q) => (
-                    <button key={q} onClick={() => { setAssistantInput(q); }} disabled={assistantLoading}>{q}</button>
-                  ))}
-                </div>
-
-                <form onSubmit={handleAssistantSend} className="research-assistant-input-bar">
-                  <input type="text" value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} placeholder="Ask anything about this project…" disabled={assistantLoading} />
-                  <button type="submit" disabled={assistantLoading || !assistantInput.trim()} className="research-assistant-send" aria-label="Send">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-                  </button>
-                </form>
               </section>
             )}
+
+
 
             {/* === REFERENCES === */}
             {activeSection === 'references' && (
@@ -1558,21 +1579,7 @@ export default function ProjectWorkspacePage() {
 
       </div>
 
-      {/* Global Research Assistant floating button */}
-      <div className="fixed bottom-5 right-5 z-50">
-        <button
-          onClick={() => {
-            setActiveSection('assistant');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          className="research-assistant-trigger"
-          aria-label="Open research assistant"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V22l3.5-2.5c.2 0 .3 0 .5 0a8 8 0 0 0 0-16z" />
-          </svg>
-        </button>
-      </div>
+
 
       {/* Footer Credit */}
       <footer className="fixed bottom-2 right-5 z-30 select-none pointer-events-none text-right">

@@ -110,23 +110,22 @@ export type FollowUp = {
   created_at: string;
 };
 
-export type LawProject = {
-  id: number;
+export type DocumentSummaryItem = {
+  document_id: number;
   title: string;
-  legal_question: string;
-  jurisdiction: string | null;
-  disclaimer: string;
-  created_at: string;
+  filename: string;
+  extracted_characters: number;
+  summary: string;
+  key_findings: string[];
+  methodology: string[];
 };
 
-export type LawSource = {
-  id: number;
-  project_id: number;
-  label: string;
-  source_url: string;
-  source_type: 'fact' | 'source' | 'inference' | 'suggestion';
-  excerpt: string | null;
-  created_at: string;
+export type DocumentSummariesResponse = {
+  status: 'success' | 'empty';
+  scope: string;
+  count: number;
+  summaries: DocumentSummaryItem[];
+  message: string;
 };
 
 export type ResearchAnalysis = {
@@ -134,6 +133,13 @@ export type ResearchAnalysis = {
     idea: string;
     objectives: string[];
     status: string;
+    problem_understanding?: string;
+    research_questions?: string[];
+    model_recommendations?: Array<{ name: string; rationale: string }>;
+    methodology_recommendations?: Array<{ stage: string; details: string }>;
+    expected_challenges?: string[];
+    potential_novelty?: string;
+    future_work?: string[];
   };
 
   literature: {
@@ -244,8 +250,21 @@ export type ResearchAnalysis = {
   _documents_used?: Array<{ id: number; filename: string }>;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+function getApiBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+  return 'http://localhost:8000';
+}
+
+export const API_BASE_URL = getApiBaseUrl();
+
+export function buildUrl(path: string): string {
+  const base = getApiBaseUrl();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+}
 
 const CONNECTION_ERROR =
   'ResearchOS could not connect to the research server. Confirm that the backend is running at http://localhost:8000, then try again.';
@@ -265,7 +284,8 @@ async function request<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    const fullUrl = buildUrl(path);
+    response = await fetch(fullUrl, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -675,8 +695,9 @@ export async function uploadResearchDocument(
   if (projectId) params.set('project_id', String(projectId));
   const qs = params.toString() ? `?${params.toString()}` : '';
   let response: Response;
+  const uploadUrl = buildUrl(`/api/v1/papers/upload${qs}`);
   try {
-    response = await fetch(`${API_BASE_URL}/api/v1/papers/upload${qs}`, {
+    response = await fetch(uploadUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body,
@@ -685,7 +706,7 @@ export async function uploadResearchDocument(
     if (error instanceof TypeError) {
       await sleep(BASE_RETRY_DELAY);
       try {
-        response = await fetch(`${API_BASE_URL}/api/v1/papers/upload${qs}`, {
+        response = await fetch(uploadUrl, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body,
@@ -768,26 +789,11 @@ export function snoozeFollowUp(token: string, followupId: number) {
   return request<FollowUp>(`/api/v1/followups/${followupId}/snooze?hours=24`, { method: 'POST' }, token);
 }
 
-export function listLawProjects(token: string) {
-  return request<LawProject[]>('/api/v1/law/projects', {}, token);
-}
-
-export function createLawProject(token: string, title: string, legalQuestion: string, jurisdiction: string) {
-  return request<LawProject>('/api/v1/law/projects', {
-    method: 'POST',
-    body: JSON.stringify({ title, legal_question: legalQuestion, jurisdiction: jurisdiction || null }),
-  }, token);
-}
-
-export function listLawSources(token: string, projectId: number) {
-  return request<LawSource[]>(`/api/v1/law/projects/${projectId}/sources`, {}, token);
-}
-
-export function addLawSource(token: string, projectId: number, label: string, sourceUrl: string, sourceType: LawSource['source_type'], excerpt: string) {
-  return request<LawSource>(`/api/v1/law/projects/${projectId}/sources`, {
-    method: 'POST',
-    body: JSON.stringify({ label, source_url: sourceUrl, source_type: sourceType, excerpt: excerpt || null }),
-  }, token);
+export function summarizeDocuments(token: string, projectId?: number) {
+  const url = projectId
+    ? `/api/v1/research/summarize-documents?project_id=${projectId}`
+    : '/api/v1/research/summarize-documents';
+  return request<DocumentSummariesResponse>(url, { method: 'POST' }, token);
 }
 
 export function analyzeResearch(
@@ -1029,6 +1035,9 @@ export type LiteratureSearchResponse = {
     url: string;
     doi: string;
     citation_count: number;
+    citation_source?: string;
+    google_scholar_verified?: boolean;
+    google_scholar_citations?: number | null;
     venue: string;
     source: string;
     relevance_score: number;

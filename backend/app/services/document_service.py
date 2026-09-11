@@ -448,13 +448,15 @@ class DocumentService:
 
     @staticmethod
     def retrieve(db: Session, owner_id: int, query: str, limit: int, project_id: int | None = None) -> list[dict[str, object]]:
-        """Retrieve document excerpts relevant to a query, optionally scoped to a project."""
+        """Retrieve document excerpts relevant to a query, strictly scoped to a project or global workspace."""
         terms = [term for term in re.findall(r"[a-z0-9]{2,}", query.lower())]
         results: list[dict[str, object]] = []
 
         query_filter = [ResearchDocument.owner_id == owner_id]
         if project_id is not None:
             query_filter.append(ResearchDocument.project_id == project_id)
+        else:
+            query_filter.append(ResearchDocument.project_id.is_(None))
 
         for document in db.query(ResearchDocument).filter(*query_filter).all():
             text = document.extracted_text
@@ -479,21 +481,27 @@ class DocumentService:
         """Normalize owner-scoped uploaded documents for the existing agents.
 
         Returns documents as 'papers' with the full extracted text as the abstract,
-        so that agents can actually read and analyze the document content.
+        strictly scoped to either the specific project or global workspace.
         """
         if document_ids:
+            query_filter = [
+                ResearchDocument.owner_id == owner_id,
+                ResearchDocument.id.in_(document_ids),
+            ]
+            if project_id is not None:
+                query_filter.append(ResearchDocument.project_id == project_id)
+            else:
+                query_filter.append(ResearchDocument.project_id.is_(None))
+
             documents = (
                 db.query(ResearchDocument)
-                .filter(
-                    ResearchDocument.owner_id == owner_id,
-                    ResearchDocument.id.in_(document_ids),
-                )
+                .filter(*query_filter)
                 .all()
             )
             if len(documents) != len(set(document_ids)):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="One or more uploaded documents were not found.",
+                    detail="One or more uploaded documents were not found in this workspace scope.",
                 )
         else:
             # When no specific document IDs, search within the project if provided
@@ -525,7 +533,7 @@ class DocumentService:
                 else:
                     documents = []
             else:
-                matches = DocumentService.retrieve(db, owner_id, query, limit=50)
+                matches = DocumentService.retrieve(db, owner_id, query, limit=50, project_id=None)
                 matched_ids = [int(match["document_id"]) for match in matches]
                 if not matched_ids:
                     return []
@@ -533,6 +541,7 @@ class DocumentService:
                     db.query(ResearchDocument)
                     .filter(
                         ResearchDocument.owner_id == owner_id,
+                        ResearchDocument.project_id.is_(None),
                         ResearchDocument.id.in_(matched_ids),
                     )
                     .all()

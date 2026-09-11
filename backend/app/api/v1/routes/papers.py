@@ -73,14 +73,26 @@ def upload_document(
 
 
 @router.get("/documents", response_model=list[ResearchDocumentResponse])
-def list_documents(db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
-    documents = db.query(ResearchDocument).filter(ResearchDocument.owner_id == user_id).order_by(ResearchDocument.created_at.desc()).all()
+def list_documents(
+    project_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user),
+):
+    query = db.query(ResearchDocument).filter(ResearchDocument.owner_id == user_id)
+    if project_id is not None:
+        query = query.filter(ResearchDocument.project_id == project_id)
+    else:
+        query = query.filter(ResearchDocument.project_id.is_(None))
+    documents = query.order_by(ResearchDocument.created_at.desc()).all()
     return [serialize_document(document) for document in documents]
 
 
 @router.get("/documents/project/{project_id}", response_model=list[ResearchDocumentResponse])
 def list_project_documents(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     """List documents for a specific project."""
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     documents = (
         db.query(ResearchDocument)
         .filter(ResearchDocument.owner_id == user_id, ResearchDocument.project_id == project_id)
@@ -94,10 +106,11 @@ def list_project_documents(project_id: int, db: Session = Depends(get_db), user_
 def retrieve_documents(
     q: str = Query(..., min_length=2),
     limit: int = Query(default=10, ge=1, le=50),
+    project_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user),
 ):
-    return DocumentService.retrieve(db, user_id, q, limit)
+    return DocumentService.retrieve(db, user_id, q, limit, project_id=project_id)
 
 
 # ---------------------------------------------------------------------------
