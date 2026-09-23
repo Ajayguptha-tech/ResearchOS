@@ -9,6 +9,7 @@ from app.schemas.reviews import NotificationResponse
 router = APIRouter()
 
 
+@router.get("", response_model=list[NotificationResponse])
 @router.get("/", response_model=list[NotificationResponse])
 def list_notifications(db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     return NotificationRepository(db).list_for_user(user_id)

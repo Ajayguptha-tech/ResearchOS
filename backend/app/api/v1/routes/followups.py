@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
@@ -18,6 +18,7 @@ def get_followup(db: Session, followup_id: int, user_id: int) -> ResearchFollowU
     return followup
 
 
+@router.post("", response_model=FollowUpResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=FollowUpResponse, status_code=status.HTTP_201_CREATED)
 def create_followup(payload: FollowUpCreate, db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     if payload.project_id is not None and not db.query(Project).filter(Project.id == payload.project_id, Project.owner_id == user_id).first():
@@ -29,9 +30,13 @@ def create_followup(payload: FollowUpCreate, db: Session = Depends(get_db), user
     return followup
 
 
+@router.get("", response_model=list[FollowUpResponse])
 @router.get("/", response_model=list[FollowUpResponse])
-def list_followups(db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
-    return db.query(ResearchFollowUp).filter(ResearchFollowUp.user_id == user_id).order_by(ResearchFollowUp.due_at.asc(), ResearchFollowUp.id.asc()).all()
+def list_followups(project_id: int | None = Query(default=None), db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
+    query = db.query(ResearchFollowUp).filter(ResearchFollowUp.user_id == user_id)
+    if project_id is not None:
+        query = query.filter(ResearchFollowUp.project_id == project_id)
+    return query.order_by(ResearchFollowUp.due_at.asc(), ResearchFollowUp.id.asc()).all()
 
 
 @router.get("/preferences/me", response_model=PreferenceResponse)

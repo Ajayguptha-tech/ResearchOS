@@ -251,11 +251,15 @@ export type ResearchAnalysis = {
 };
 
 function getApiBaseUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL;
   if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
     return envUrl.trim().replace(/\/+$/, '');
   }
-  return 'http://localhost:8000';
+  // When running in browser without an explicit external API URL, use relative URL proxied by Next.js rewrites
+  if (typeof window !== 'undefined') {
+    return '';
+  }
+  return 'http://127.0.0.1:8000';
 }
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -267,7 +271,7 @@ export function buildUrl(path: string): string {
 }
 
 const CONNECTION_ERROR =
-  'ResearchOS could not connect to the research server. Confirm that the backend is running at http://localhost:8000, then try again.';
+  'Research server is currently unavailable.';
 
 const MAX_RETRIES = 2;
 const BASE_RETRY_DELAY = 1000;
@@ -289,6 +293,7 @@ async function request<T>(
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
         ...(token
           ? {
               Authorization: `Bearer ${token}`,
@@ -302,10 +307,7 @@ async function request<T>(
       await sleep(BASE_RETRY_DELAY);
       return request<T>(path, options, token, retries - 1);
     }
-    const detail = error instanceof Error && error.message
-      ? ` Technical detail: ${error.message}`
-      : '';
-    throw new Error(`${CONNECTION_ERROR}${detail}`);
+    throw new Error(CONNECTION_ERROR);
   }
 
   if (!response.ok) {
@@ -430,7 +432,7 @@ export function resetPassword(email: string, otp: string, newPassword: string) {
 // ---------------------------------------------------------
 
 export function listReminders(token: string) {
-  return request<Reminder[]>('/api/v1/reminders/', {}, token);
+  return request<Reminder[]>('/api/v1/reminders', {}, token);
 }
 
 export function createReminder(
@@ -440,7 +442,7 @@ export function createReminder(
   reminderDatetime: string
 ) {
   return request<Reminder>(
-    '/api/v1/reminders/',
+    '/api/v1/reminders',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -512,7 +514,7 @@ export function listProjects(
   token: string
 ) {
   return request<Project[]>(
-    '/api/v1/projects/',
+    '/api/v1/projects',
     {},
     token
   );
@@ -526,13 +528,6 @@ export function deleteProject(token: string, projectId: number) {
   );
 }
 
-export function getDocumentContent(token: string, docId: number) {
-  return request<{ id: number; filename: string; extracted_text: string; extracted_characters: number; project_id: number | null }>(
-    `/api/v1/papers/documents/${docId}/content`,
-    {},
-    token
-  );
-}
 
 export function getDocumentSummary(token: string, docId: number) {
   return request<{ id: number; filename: string; sections_detected: string[]; keywords_found: string[]; preview: string }>(
@@ -603,7 +598,7 @@ export function createProject(
   domain: string
 ) {
   return request<Project & { user_id: number }>(
-    '/api/v1/projects/',
+    '/api/v1/projects',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -619,7 +614,7 @@ export function listPapers(
   token: string
 ) {
   return request<Paper[]>(
-    '/api/v1/papers/',
+    '/api/v1/papers',
     {},
     token
   );
@@ -642,7 +637,7 @@ export function createPaper(
   abstract: string
 ) {
   return request<Paper>(
-    '/api/v1/papers/',
+    '/api/v1/papers',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -699,7 +694,10 @@ export async function uploadResearchDocument(
   try {
     response = await fetch(uploadUrl, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
+      },
       body,
     });
   } catch (error) {
@@ -708,20 +706,17 @@ export async function uploadResearchDocument(
       try {
         response = await fetch(uploadUrl, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           body,
         });
-      } catch (retryError) {
-        const detail = retryError instanceof Error && retryError.message
-          ? ` Technical detail: ${retryError.message}`
-          : '';
-        throw new Error(`${CONNECTION_ERROR}${detail}`);
+      } catch {
+        throw new Error(CONNECTION_ERROR);
       }
     } else {
-      const detail = error instanceof Error && error.message
-        ? ` Technical detail: ${error.message}`
-        : '';
-      throw new Error(`${CONNECTION_ERROR}${detail}`);
+      throw new Error(CONNECTION_ERROR);
     }
   }
   if (!response.ok) {
@@ -730,12 +725,27 @@ export async function uploadResearchDocument(
   }  return response.json() as Promise<ResearchDocument>;
 }
 
-export function listDocuments(token: string) {
+export function listDocuments(token: string, projectId?: number, allDocs?: boolean) {
+  const params = new URLSearchParams();
+  if (projectId) params.set('project_id', String(projectId));
+  if (allDocs) params.set('all_docs', 'true');
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return request<ResearchDocument[]>(
-    '/api/v1/papers/documents',
+    `/api/v1/papers/documents${qs}`,
     {},
     token
   );
+}
+
+export function getDocumentContent(token: string, docId: number) {
+  return request<{
+    id: number;
+    filename: string;
+    content_type: string;
+    extracted_text: string;
+    extracted_characters: number;
+    project_id?: number | null;
+  }>(`/api/v1/papers/documents/${docId}/content`, {}, token);
 }
 
 export function deleteDocument(token: string, docId: number) {
@@ -751,7 +761,7 @@ export function listNotifications(
   token: string
 ) {
   return request<Notification[]>(
-    '/api/v1/notifications/',
+    '/api/v1/notifications',
     {},
     token
   );
@@ -770,14 +780,15 @@ export function markNotificationRead(
   );
 }
 
-export function listFollowUps(token: string) {
-  return request<FollowUp[]>('/api/v1/followups/', {}, token);
+export function listFollowUps(token: string, projectId?: number) {
+  const qs = projectId ? `?project_id=${projectId}` : '';
+  return request<FollowUp[]>(`/api/v1/followups${qs}`, {}, token);
 }
 
 export function createFollowUp(token: string, title: string, message: string, projectId?: number) {
-  return request<FollowUp>('/api/v1/followups/', {
+  return request<FollowUp>('/api/v1/followups', {
     method: 'POST',
-    body: JSON.stringify({ title, message, project_id: projectId }),
+    body: JSON.stringify({ title, message, project_id: projectId ?? null }),
   }, token);
 }
 
@@ -787,6 +798,10 @@ export function completeFollowUp(token: string, followupId: number) {
 
 export function snoozeFollowUp(token: string, followupId: number) {
   return request<FollowUp>(`/api/v1/followups/${followupId}/snooze?hours=24`, { method: 'POST' }, token);
+}
+
+export function deleteFollowUp(token: string, followupId: number) {
+  return request<void>(`/api/v1/followups/${followupId}`, { method: 'DELETE' }, token);
 }
 
 export function summarizeDocuments(token: string, projectId?: number) {

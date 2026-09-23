@@ -31,6 +31,7 @@ def serialize_document(document: ResearchDocument) -> ResearchDocumentResponse:
     )
 
 
+@router.get("", response_model=list[PaperResponse])
 @router.get("/", response_model=list[PaperResponse])
 def list_papers(db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     return [serialize(paper) for paper in PaperRepository(db).list_for_owner(user_id)]
@@ -46,6 +47,7 @@ def search_papers(
     return [serialize(paper) for paper in PaperRepository(db).search_for_owner(q.strip(), user_id, limit)]
 
 
+@router.post("", response_model=PaperResponse)
 @router.post("/", response_model=PaperResponse)
 def create_paper(payload: PaperCreate, db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     return serialize(PaperRepository(db).create(payload.model_dump(), user_id))
@@ -58,6 +60,7 @@ def import_papers(payload: PaperImportRequest, db: Session = Depends(get_db), us
 
 
 @router.post("/upload", response_model=ResearchDocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/upload/", response_model=ResearchDocumentResponse, status_code=status.HTTP_201_CREATED)
 def upload_document(
     file: UploadFile = File(...),
     paper_id: int | None = Query(default=None),
@@ -73,15 +76,17 @@ def upload_document(
 
 
 @router.get("/documents", response_model=list[ResearchDocumentResponse])
+@router.get("/documents/", response_model=list[ResearchDocumentResponse])
 def list_documents(
     project_id: int | None = Query(default=None),
+    all_docs: bool = Query(default=False),
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user),
 ):
     query = db.query(ResearchDocument).filter(ResearchDocument.owner_id == user_id)
     if project_id is not None:
         query = query.filter(ResearchDocument.project_id == project_id)
-    else:
+    elif not all_docs:
         query = query.filter(ResearchDocument.project_id.is_(None))
     documents = query.order_by(ResearchDocument.created_at.desc()).all()
     return [serialize_document(document) for document in documents]

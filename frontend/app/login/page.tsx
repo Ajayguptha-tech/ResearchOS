@@ -131,6 +131,20 @@ export default function LoginPage() {
                 ) : "Sign in"}
               </button>
 
+              {/* Demo Credentials Quick Fill */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("demo@researchos.io");
+                    setPassword("DemoPassword123!");
+                  }}
+                  className="w-full rounded-xl border border-[#e0d9f4] bg-[#faf8ff] px-4 py-2.5 text-xs font-semibold text-[#6247bf] transition hover:bg-[#f0ebff]"
+                >
+                  ⚡ Quick Fill Demo Account (demo@researchos.io)
+                </button>
+              </div>
+
             </form>
 
           </div>

@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import { ConnectionStatus } from '../../components/ConnectionStatus';
 
 import {
   analyzeResearch,
@@ -48,6 +49,8 @@ import {
   UserProfile,
   summarizeDocuments,
   DocumentSummaryItem,
+  deleteFollowUp,
+  getDocumentContent,
 } from '../../lib/api';
 
 export default function WorkspacePage() {
@@ -78,11 +81,20 @@ export default function WorkspacePage() {
   const [editingPaperTitle, setEditingPaperTitle] = useState('');
   const [editingPaperAbstract, setEditingPaperAbstract] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [evidenceSuccess, setEvidenceSuccess] = useState('');
+  const [evidenceError, setEvidenceError] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [workspaceDocuments, setWorkspaceDocuments] = useState<ResearchDocument[]>([]);
+  const [uploadDocProjectId, setUploadDocProjectId] = useState<string>('');
+  const [docFilterProjectId, setDocFilterProjectId] = useState<string>('all');
+  const [viewingDocContentId, setViewingDocContentId] = useState<number | null>(null);
+  const [docContentMap, setDocContentMap] = useState<Record<number, string>>({});
+  const [loadingDocContentId, setLoadingDocContentId] = useState<number | null>(null);
+  const [followUpFilterProjectId, setFollowUpFilterProjectId] = useState<string>('all');
+  const [followUpCreateProjectId, setFollowUpCreateProjectId] = useState<string>('');
 
   const [isRegistering, setIsRegistering] =
     useState(false);
@@ -139,7 +151,10 @@ export default function WorkspacePage() {
     useState(false);
 
   const providersUnavailable =
-    error.includes('No literature provider is currently available');
+    error.toLowerCase().includes('literature provider') ||
+    error.toLowerCase().includes('external literature') ||
+    error.toLowerCase().includes('semantic scholar') ||
+    error.toLowerCase().includes('crossref');
 
   async function loadWorkspaceData(accessToken: string) {
     setConnecting(true);
@@ -160,7 +175,7 @@ export default function WorkspacePage() {
         listNotifications(accessToken),
         listFollowUps(accessToken),
         listReminders(accessToken),
-        listDocuments(accessToken),
+        listDocuments(accessToken, undefined, true),
       ]);
       if (loadedProfile.status === 'fulfilled') setUserProfile(loadedProfile.value);
       if (loadedProjects.status === 'fulfilled') setProjects(loadedProjects.value);
@@ -288,6 +303,17 @@ export default function WorkspacePage() {
 
     if (!token) return;
 
+    const titleTrimmed = paperTitle.trim();
+    if (!titleTrimmed) return;
+
+    setEvidenceSuccess('');
+    setEvidenceError('');
+
+    if (papers.some((p) => p.title.trim().toLowerCase() === titleTrimmed.toLowerCase())) {
+      setEvidenceError('An evidence item with this title already exists in your workspace.');
+      return;
+    }
+
     setError('');
     setIsLoading(true);
 
@@ -295,8 +321,8 @@ export default function WorkspacePage() {
       const paper =
         await createPaper(
           token,
-          paperTitle,
-          paperAbstract
+          titleTrimmed,
+          paperAbstract.trim()
         );
 
       setPapers((current) => [
@@ -304,13 +330,15 @@ export default function WorkspacePage() {
         ...current,
       ]);
 
+      setEvidenceSuccess(`Evidence "${paper.title}" saved successfully.`);
       setPaperTitle('');
       setPaperAbstract('');
+      setTimeout(() => setEvidenceSuccess(''), 5000);
     } catch (paperError) {
-      setError(
+      setEvidenceError(
         paperError instanceof Error
           ? paperError.message
-          : 'Paper import failed.'
+          : 'Failed to save evidence.'
       );
     } finally {
       setIsLoading(false);
@@ -353,7 +381,8 @@ export default function WorkspacePage() {
     setUploadStatus('Uploading and extracting text…');
     setUploading(true);
     try {
-      const doc = await uploadResearchDocument(token, selectedFile);
+      const pid = uploadDocProjectId ? Number(uploadDocProjectId) : undefined;
+      const doc = await uploadResearchDocument(token, selectedFile, undefined, pid);
       setUploadStatus(`Saved ${doc.filename} · ${doc.extracted_characters.toLocaleString()} characters extracted`);
       setWorkspaceDocuments((prev) => [doc, ...prev]);
       setSelectedFile(null);
@@ -365,6 +394,28 @@ export default function WorkspacePage() {
       setError(uploadError instanceof Error ? uploadError.message : 'Document upload failed.');
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleViewDocumentContent(docId: number) {
+    if (viewingDocContentId === docId) {
+      setViewingDocContentId(null);
+      return;
+    }
+    if (docContentMap[docId] !== undefined) {
+      setViewingDocContentId(docId);
+      return;
+    }
+    if (!token) return;
+    setLoadingDocContentId(docId);
+    try {
+      const data = await getDocumentContent(token, docId);
+      setDocContentMap((prev) => ({ ...prev, [docId]: data.extracted_text }));
+      setViewingDocContentId(docId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retrieve document content.');
+    } finally {
+      setLoadingDocContentId(null);
     }
   }
 
@@ -390,14 +441,32 @@ export default function WorkspacePage() {
     }
   }
 
+  async function handleDeleteFollowUp(followupId: number) {
+    if (!token) return;
+    try {
+      await deleteFollowUp(token, followupId);
+      setFollowUps((current) => current.filter((followup) => followup.id !== followupId));
+    } catch (followupError) {
+      setError(followupError instanceof Error ? followupError.message : 'Follow-up deletion failed.');
+    }
+  }
+
   async function handleCreateFollowUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
     const form = new FormData(event.currentTarget);
+    const pidVal = form.get('project_id');
+    const pid = pidVal && String(pidVal).trim() !== '' ? Number(pidVal) : undefined;
     try {
-      const followup = await createFollowUp(token, String(form.get('title')), String(form.get('message')));
+      const followup = await createFollowUp(
+        token,
+        String(form.get('title')),
+        String(form.get('message')),
+        pid
+      );
       setFollowUps((current) => [...current, followup]);
       event.currentTarget.reset();
+      setFollowUpCreateProjectId('');
     } catch (followupError) {
       setError(followupError instanceof Error ? followupError.message : 'Follow-up creation failed.');
     }
@@ -658,46 +727,50 @@ export default function WorkspacePage() {
           </div>
 
           <div className="workspace-header-actions">
-            <nav aria-label="Workspace navigation" className="workspace-nav"><a href="/workspace">Workspace</a><a href="/dashboard">Projects</a><a href="/research/new">Research Ideas</a><a href="/workspace#reminders">Reminders</a></nav>
-            {token && (
-              <div className="flex items-center gap-3">
-                {userProfile && <span className="text-sm text-slate-500">{userProfile.name}</span>}
-                <button
-                  onClick={signOut}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-cyan-400 hover:text-white"
-                >
-                  Sign out
-                </button>
-              </div>
-            )}
+            <nav aria-label="Workspace navigation" className="workspace-nav"><a href="/workspace">Workspace</a><a href="/dashboard">Projects</a><a href="/research/new">Research Ideas</a><a href="/workspace#evidence">Evidence</a><a href="/workspace#followups">Follow-ups</a><a href="/workspace#reminders">Reminders</a></nav>
+            <div className="flex items-center gap-3">
+              <ConnectionStatus />
+              {token && (
+                <>
+                  {userProfile && <span className="text-sm text-slate-500">{userProfile.name}</span>}
+                  <button
+                    onClick={signOut}
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-cyan-400 hover:text-white"
+                  >
+                    Sign out
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </header>
 
         {/* ERROR */}
 
         {error && providersUnavailable ? (
-          <p
+          <div
             role="status"
-            title={error}
-            className="mt-4 inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700"
+            className="mt-6 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900"
           >
-            External literature providers unavailable in this environment
-          </p>
+            <span>External literature providers are currently unavailable. Local ResearchOS features remain available.</span>
+          </div>
         ) : error && (
           <div
             role="alert"
-            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-200"
+            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-900"
           >
-            <span>{error}</span>
-             {error.includes('could not connect to the research server') && (
-               <button
-                 type="button"
-                 onClick={() => token && loadWorkspaceData(token)}
-                 className="rounded-md border border-rose-700 px-3 py-1.5 font-medium text-rose-100 transition hover:bg-rose-900/50"
-               >
-                 Retry connection
-               </button>
-             )}
+            <span>
+              {error.toLowerCase().includes('unavailable') || error.toLowerCase().includes('failed to fetch') || error.toLowerCase().includes('could not connect')
+                ? 'Research server is currently unavailable.'
+                : error}
+            </span>
+            <button
+              type="button"
+              onClick={() => token && loadWorkspaceData(token)}
+              className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 font-medium text-rose-700 shadow-sm transition hover:bg-rose-100"
+            >
+              Retry Connection
+            </button>
           </div>
         )}
 
@@ -1012,11 +1085,10 @@ export default function WorkspacePage() {
                       required
                       minLength={3}
                       value={paperTitle}
-                      onChange={(event) =>
-                        setPaperTitle(
-                          event.target.value
-                        )
-                      }
+                      onChange={(event) => {
+                        setPaperTitle(event.target.value);
+                        if (evidenceError) setEvidenceError('');
+                      }}
                       placeholder="Paper title"
                       className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400"
                     />
@@ -1035,11 +1107,24 @@ export default function WorkspacePage() {
                     />
 
                     <button
-                      disabled={isLoading}
-                      className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-slate-950 disabled:opacity-50"
+                      type="submit"
+                      disabled={isLoading || !paperTitle.trim()}
+                      className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-slate-950 disabled:opacity-50 transition hover:bg-slate-100"
                     >
-                      Save paper
+                      {isLoading ? 'Saving evidence…' : 'Save Evidence'}
                     </button>
+
+                    {evidenceSuccess && (
+                      <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+                        ✓ {evidenceSuccess}
+                      </p>
+                    )}
+
+                    {evidenceError && (
+                      <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+                        ⚠ {evidenceError}
+                      </p>
+                    )}
 
                   </div>
                 </form>
@@ -1052,13 +1137,28 @@ export default function WorkspacePage() {
                   <p className="mt-2 text-sm text-slate-400">
                     PDF, DOCX, TXT, MD, CSV, XLSX, PPTX, HTML, JSON, XML, PNG, JPG
                   </p>
+                  <label className="mt-4 block text-xs text-slate-400">
+                    Associate with Project (optional):
+                  </label>
+                  <select
+                    value={uploadDocProjectId}
+                    onChange={(e) => setUploadDocProjectId(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-400"
+                  >
+                    <option value="">General Workspace (No project)</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        Project #{p.id} — {p.title}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     ref={fileInputRef}
                     type="file"
                     required
                     accept=".txt,.md,.markdown,.pdf,.docx,.csv,.xlsx,.xls,.pptx,.doc,.html,.htm,.json,.xml,.png,.jpg,.jpeg,.webp"
                     onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-                    className="mt-5 block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"
+                    className="mt-4 block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"
                   />
                   {selectedFile && (
                     <p className="mt-2 text-xs text-slate-500">Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
@@ -1076,14 +1176,164 @@ export default function WorkspacePage() {
               </div>
             </section>
 
-            <section className="mt-10 border-t border-slate-800 pt-8">
-              <div className="flex items-end justify-between gap-4"><div><p className="text-sm text-violet-400">Research continuity</p><h2 className="mt-1 text-2xl font-semibold">Follow-ups</h2></div><span className="text-sm text-slate-500">{followUps.filter((followup) => followup.status === 'pending').length} pending</span></div>
-              <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]"><div className="space-y-3">{followUps.length === 0 ? <p className="rounded-xl border border-dashed border-slate-700 px-6 py-8 text-center text-slate-400">No research follow-ups yet.</p> : followUps.map((followup) => <article key={followup.id} className="rounded-xl border border-slate-800 bg-slate-900 p-5"><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{followup.title}</h3><p className="mt-2 text-sm text-slate-400">{followup.message}</p></div><span className="rounded-full bg-violet-950 px-3 py-1 text-xs text-violet-300">{followup.status}</span></div>{followup.status !== 'completed' && <div className="mt-4 flex gap-2"><button onClick={() => updateFollowUp('complete', followup.id)} className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950">Complete</button><button onClick={() => updateFollowUp('snooze', followup.id)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Snooze 24h</button></div>}</article>)}</div><form onSubmit={handleCreateFollowUp} className="h-fit rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">Add a follow-up</h2><div className="mt-5 space-y-3"><input name="title" required minLength={3} placeholder="Next research action" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400" /><textarea name="message" required minLength={3} placeholder="What should happen next?" rows={4} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 outline-none focus:border-cyan-400" /><button className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-slate-950">Create follow-up</button></div></form></div>
+            <section id="followups" className="mt-10 border-t border-slate-800 pt-8">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="text-sm text-violet-400">Research continuity</p>
+                  <h2 className="mt-1 text-2xl font-semibold">Follow-ups</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={followUpFilterProjectId}
+                    onChange={(e) => setFollowUpFilterProjectId(e.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-400"
+                  >
+                    <option value="all">All Follow-ups ({followUps.length})</option>
+                    <option value="general">General (No project)</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        Project #{p.id} — {p.title}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-slate-500">
+                    {followUps.filter((followup) => followup.status === 'pending').length} pending
+                  </span>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-3">
+                  {followUps.filter((f) => {
+                    if (followUpFilterProjectId === 'all') return true;
+                    if (followUpFilterProjectId === 'general') return !f.project_id;
+                    return f.project_id === Number(followUpFilterProjectId);
+                  }).length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-700 px-6 py-8 text-center text-slate-400">
+                      No research follow-ups match this filter.
+                    </p>
+                  ) : (
+                    followUps
+                      .filter((f) => {
+                        if (followUpFilterProjectId === 'all') return true;
+                        if (followUpFilterProjectId === 'general') return !f.project_id;
+                        return f.project_id === Number(followUpFilterProjectId);
+                      })
+                      .map((followup) => {
+                        const assocProject = followup.project_id
+                          ? projects.find((p) => p.id === followup.project_id)
+                          : null;
+                        return (
+                          <article key={followup.id} className="rounded-xl border border-slate-800 bg-slate-900 p-5 transition hover:border-slate-700">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h3 className="font-semibold text-slate-100">{followup.title}</h3>
+                                <p className="mt-2 text-sm text-slate-400">{followup.message}</p>
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  {assocProject ? (
+                                    <span className="rounded-full bg-cyan-950 px-2.5 py-0.5 text-xs text-cyan-300">
+                                      Project #{assocProject.id}: {assocProject.title}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-400">
+                                      General Workspace
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-slate-500">
+                                    Created {new Date(followup.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+                                  followup.status === 'completed'
+                                    ? 'bg-emerald-950 text-emerald-300'
+                                    : followup.status === 'snoozed'
+                                    ? 'bg-amber-950 text-amber-300'
+                                    : 'bg-violet-950 text-violet-300'
+                                }`}
+                              >
+                                {followup.status}
+                              </span>
+                            </div>
+                            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
+                              <div className="flex gap-2">
+                                {followup.status !== 'completed' && (
+                                  <button
+                                    onClick={() => updateFollowUp('complete', followup.id)}
+                                    className="rounded-lg bg-cyan-400 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-cyan-300 transition"
+                                  >
+                                    ✓ Complete
+                                  </button>
+                                )}
+                                {followup.status !== 'completed' && (
+                                  <button
+                                    onClick={() => updateFollowUp('snooze', followup.id)}
+                                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-600 transition"
+                                  >
+                                    Snooze 24h
+                                  </button>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleDeleteFollowUp(followup.id)}
+                                className="rounded-lg border border-slate-800 px-2.5 py-1.5 text-xs text-slate-400 hover:border-rose-800 hover:text-rose-400 transition"
+                                title="Delete follow-up"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                  )}
+                </div>
+                <form onSubmit={handleCreateFollowUp} className="h-fit rounded-xl border border-slate-800 bg-slate-900 p-5">
+                  <h2 className="font-semibold">Add a follow-up</h2>
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">
+                        Associate with Project (optional):
+                      </label>
+                      <select
+                        name="project_id"
+                        value={followUpCreateProjectId}
+                        onChange={(e) => setFollowUpCreateProjectId(e.target.value)}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-400"
+                      >
+                        <option value="">General (No project)</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Project #{p.id} — {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <input
+                      name="title"
+                      required
+                      minLength={3}
+                      placeholder="Next research action"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 text-slate-100 placeholder:text-slate-500"
+                    />
+                    <textarea
+                      name="message"
+                      required
+                      minLength={3}
+                      placeholder="What should happen next?"
+                      rows={4}
+                      className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 text-slate-100 placeholder:text-slate-500"
+                    />
+                    <button className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-slate-950 hover:bg-slate-200 transition">
+                      Create follow-up
+                    </button>
+                  </div>
+                </form>
+              </div>
             </section>
 
             {/* SUPPORTING DOCUMENTS / EVIDENCE LIBRARY */}
 
-            <section className="mt-10 border-t border-slate-800 pt-8">
+            <section id="evidence" className="mt-10 border-t border-slate-800 pt-8">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="text-sm text-cyan-400">Evidence Library</p>
@@ -1092,8 +1342,20 @@ export default function WorkspacePage() {
                     Upload research papers, datasets, and documents for AI-powered analysis.
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-500">{workspaceDocuments.length} documents</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={docFilterProjectId}
+                    onChange={(e) => setDocFilterProjectId(e.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-400"
+                  >
+                    <option value="all">All Documents ({workspaceDocuments.length})</option>
+                    <option value="workspace">General Workspace</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        Project #{p.id} — {p.title}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     onClick={handleSummarizeWorkspaceDocuments}
@@ -1176,33 +1438,80 @@ export default function WorkspacePage() {
               )}
 
               <div className="mt-5 space-y-3">
-                {workspaceDocuments.length === 0 ? (
+                {workspaceDocuments.filter((doc) => {
+                  if (docFilterProjectId === 'all') return true;
+                  if (docFilterProjectId === 'workspace') return !doc.project_id;
+                  return doc.project_id === Number(docFilterProjectId);
+                }).length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-700 px-6 py-10 text-center text-slate-400">
-                    No supporting documents yet. Upload your first document above.
+                    No supporting documents match this filter. Upload a document above.
                   </div>
                 ) : (
-                  workspaceDocuments.map((doc) => (
-                    <article
-                      key={doc.id}
-                      className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 p-4 transition hover:border-cyan-500/40"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{doc.filename}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {doc.extracted_characters.toLocaleString()} characters extracted · {doc.content_type}
-                          {doc.project_id ? ` · Project #${doc.project_id}` : ' · Workspace'}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="shrink-0 rounded-full bg-emerald-950 px-2.5 py-1 text-xs text-emerald-300">✓ Ready</span>
-                        <button
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 transition hover:border-rose-500 hover:text-rose-400"
+                  workspaceDocuments
+                    .filter((doc) => {
+                      if (docFilterProjectId === 'all') return true;
+                      if (docFilterProjectId === 'workspace') return !doc.project_id;
+                      return doc.project_id === Number(docFilterProjectId);
+                    })
+                    .map((doc) => {
+                      const assocProject = doc.project_id ? projects.find((p) => p.id === doc.project_id) : null;
+                      return (
+                        <article
+                          key={doc.id}
+                          className="rounded-xl border border-slate-800 bg-slate-900 p-4 transition hover:border-cyan-500/40"
                         >
-                          ✕
-                        </button>
-                      </div>
-                    </article>
-                  ))
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate text-slate-100">{doc.filename}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {doc.extracted_characters.toLocaleString()} characters extracted · {doc.content_type}
+                                {assocProject ? ` · Project #${assocProject.id}: ${assocProject.title}` : doc.project_id ? ` · Project #${doc.project_id}` : ' · General Workspace'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleViewDocumentContent(doc.id)}
+                                className="shrink-0 rounded-lg border border-cyan-800 bg-cyan-950/40 px-2.5 py-1 text-xs font-medium text-cyan-300 hover:bg-cyan-900/60 transition"
+                              >
+                                {loadingDocContentId === doc.id
+                                  ? 'Loading…'
+                                  : viewingDocContentId === doc.id
+                                  ? 'Hide Text'
+                                  : 'View Extracted Text'}
+                              </button>
+                              <span className="shrink-0 rounded-full bg-emerald-950 px-2.5 py-1 text-xs text-emerald-300">✓ Ready</span>
+                              <button
+                                onClick={() => handleDeleteDocument(doc.id)}
+                                className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 transition hover:border-rose-500 hover:text-rose-400"
+                                title="Delete document"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          {viewingDocContentId === doc.id && (
+                            <div className="mt-3 border-t border-slate-800 pt-3">
+                              <div className="flex items-center justify-between pb-1.5">
+                                <span className="text-xs font-semibold text-cyan-400">
+                                  Extracted Content Preview ({doc.extracted_characters.toLocaleString()} chars)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDocContentId(null)}
+                                  className="text-xs text-slate-400 hover:text-slate-200"
+                                >
+                                  Close Preview
+                                </button>
+                              </div>
+                              <div className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-slate-300">
+                                {docContentMap[doc.id] || 'No extracted text found in document.'}
+                              </div>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })
                 )}
               </div>
             </section>

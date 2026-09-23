@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger(__name__)
@@ -69,11 +69,13 @@ async def lifespan(_: FastAPI):
                 " or visit GET /api/v1/auth/smtp-status"
             )
 
-    # Create database tables automatically when using SQLite
+    # Create database tables automatically
     if settings.database_url.startswith("sqlite"):
         reset_database(engine)
         Base.metadata.create_all(bind=engine)
         upgrade_sqlite_schema(engine)
+    else:
+        Base.metadata.create_all(bind=engine)
 
     # Create required directories
     Path(settings.vector_store_path).mkdir(
@@ -110,11 +112,25 @@ app.add_middleware(
         for origin in settings.cors_origins.split(",")
         if origin.strip()
     ],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.ngrok.*|.*\.vercel\.app)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def fix_proxy_redirect_location(request: Request, call_next):
+    response = await call_next(request)
+    location = response.headers.get("location")
+    if location and ("127.0.0.1:8000" in location or "localhost:8000" in location):
+        from urllib.parse import urlparse
+        parsed = urlparse(location)
+        relative_location = parsed.path
+        if parsed.query:
+            relative_location += f"?{parsed.query}"
+        response.headers["location"] = relative_location
+    return response
 
 
 # ---------------------------------------------------------
@@ -161,12 +177,6 @@ app.include_router(
     followups.router,
     prefix="/api/v1/followups",
     tags=["followups"],
-)
-
-app.include_router(
-    communications.router,
-    prefix="/api/v1/communications",
-    tags=["communications"],
 )
 
 app.include_router(

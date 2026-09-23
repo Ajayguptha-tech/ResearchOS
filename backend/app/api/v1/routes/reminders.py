@@ -35,6 +35,11 @@ def _get_reminder(
 
 
 @router.post(
+    "",
+    response_model=ReminderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@router.post(
     "/",
     response_model=ReminderResponse,
     status_code=status.HTTP_201_CREATED,
@@ -56,6 +61,7 @@ def create_reminder(
     return reminder
 
 
+@router.get("", response_model=list[ReminderResponse])
 @router.get("/", response_model=list[ReminderResponse])
 def list_reminders(
     db: Session = Depends(get_db),

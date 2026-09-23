@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { ConnectionStatus } from '../../../components/ConnectionStatus';
 import {
   getMe,
   getProjectResearchPaper,
@@ -9,12 +10,10 @@ import {
   updateResearchPaper,
   listProjectDocuments,
   uploadResearchDocument,
+  getDocumentContent,
   summarizeDocuments,
   DocumentSummaryItem,
   listProjects,
-  analyzeLocalResearch,
-  saveAnalysis,
-  listAnalyses,
   deleteDocument,
   deleteProject,
   listReferences,
@@ -85,6 +84,9 @@ export default function ProjectWorkspacePage() {
   const [documents, setDocuments] = useState<ResearchDocument[]>([]);
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [viewingDocContentId, setViewingDocContentId] = useState<number | null>(null);
+  const [docContentMap, setDocContentMap] = useState<Record<number, string>>({});
+  const [loadingDocContentId, setLoadingDocContentId] = useState<number | null>(null);
 
   // Research paper editor
   const [paper, setPaper] = useState<ResearchPaper | null>(null);
@@ -96,9 +98,6 @@ export default function ProjectWorkspacePage() {
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // AI Analysis & Document Summaries
-  const [analysisIdea, setAnalysisIdea] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [docSummaries, setDocSummaries] = useState<DocumentSummaryItem[] | null>(null);
   const [summarizingDocs, setSummarizingDocs] = useState(false);
 
@@ -237,19 +236,6 @@ export default function ProjectWorkspacePage() {
     } catch {}
   }
 
-  async function loadAnalyses(accessToken: string, pid: number) {
-    try {
-      const a = await listAnalyses(accessToken, pid);
-      if (a.length > 0 && !analysisResult) {
-        // Load most recent analysis
-        const mostRecent = a[0];
-        try {
-          setAnalysisResult(JSON.parse(mostRecent.result_json));
-          setAnalysisIdea(mostRecent.research_idea);
-        } catch {}
-      }
-    } catch {}
-  }
 
   async function loadReferences(accessToken: string, pid: number) {
     try {
@@ -462,6 +448,28 @@ export default function ProjectWorkspacePage() {
     }
   }
 
+  async function handleViewDocumentContent(docId: number) {
+    if (viewingDocContentId === docId) {
+      setViewingDocContentId(null);
+      return;
+    }
+    if (docContentMap[docId] !== undefined) {
+      setViewingDocContentId(docId);
+      return;
+    }
+    if (!token) return;
+    setLoadingDocContentId(docId);
+    try {
+      const data = await getDocumentContent(token, docId);
+      setDocContentMap((prev) => ({ ...prev, [docId]: data.extracted_text }));
+      setViewingDocContentId(docId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retrieve document content.');
+    } finally {
+      setLoadingDocContentId(null);
+    }
+  }
+
   async function handleDeleteProject() {
     if (!token || !window.confirm('Delete this project and all its data? This cannot be undone.')) return;
     try {
@@ -649,6 +657,10 @@ export default function ProjectWorkspacePage() {
           </div>
         </header>
 
+        <div className="mt-4">
+          <ConnectionStatus />
+        </div>
+
         {error && (
           <div role="alert" className="mt-4 rounded-lg border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>
         )}
@@ -749,15 +761,49 @@ export default function ProjectWorkspacePage() {
                   ) : (
                     <div className="mt-4 space-y-2">
                       {documents.map((doc) => (
-                        <article key={doc.id} className="flex items-center justify-between rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4 transition hover:border-[#7c60d6]">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate" style={{ color: '#1b2440' }}>{doc.filename}</p>
-                            <p className="text-xs" style={{ color: '#8790a4' }}>{doc.extracted_characters.toLocaleString()} characters extracted · {doc.content_type}</p>
+                        <article key={doc.id} className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4 transition hover:border-[#7c60d6]">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{ color: '#1b2440' }}>{doc.filename}</p>
+                              <p className="text-xs" style={{ color: '#8790a4' }}>{doc.extracted_characters.toLocaleString()} characters extracted · {doc.content_type}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleViewDocumentContent(doc.id)}
+                                className="shrink-0 rounded-lg border border-[#e0d9f4] bg-white px-2.5 py-1 text-xs font-medium transition hover:border-[#7c60d6]"
+                                style={{ color: '#6247bf' }}
+                              >
+                                {loadingDocContentId === doc.id
+                                  ? 'Loading…'
+                                  : viewingDocContentId === doc.id
+                                  ? 'Hide Text'
+                                  : 'View Extracted Text'}
+                              </button>
+                              <span className="shrink-0 rounded-full bg-[rgba(58,140,106,0.1)] px-3 py-1 text-xs font-medium" style={{ color: '#3a8c6a' }}>✓ Ready</span>
+                              <button onClick={() => handleDeleteDocument(doc.id)} className="shrink-0 rounded-lg border border-[#e7e2fa] px-2 py-1 text-xs transition hover:border-[#d66060] hover:text-[#d66060]" style={{ color: '#8790a4' }}>✕</button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="shrink-0 rounded-full bg-[rgba(58,140,106,0.1)] px-3 py-1 text-xs font-medium" style={{ color: '#3a8c6a' }}>✓ Ready</span>
-                            <button onClick={() => handleDeleteDocument(doc.id)} className="shrink-0 rounded-lg border border-[#e7e2fa] px-2 py-1 text-xs transition hover:border-[#d66060] hover:text-[#d66060]" style={{ color: '#8790a4' }}>✕</button>
-                          </div>
+                          {viewingDocContentId === doc.id && (
+                            <div className="mt-3 border-t border-[#e7e2fa] pt-3">
+                              <div className="flex items-center justify-between pb-1.5">
+                                <span className="text-xs font-semibold" style={{ color: '#6247bf' }}>
+                                  Extracted Content Preview ({doc.extracted_characters.toLocaleString()} chars)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDocContentId(null)}
+                                  className="text-xs hover:underline"
+                                  style={{ color: '#8790a4' }}
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[#e0d9f4] bg-white p-3 font-mono text-xs text-[#1b2440]">
+                                {docContentMap[doc.id] || 'No extracted text found.'}
+                              </div>
+                            </div>
+                          )}
                         </article>
                       ))}
                     </div>
@@ -846,12 +892,12 @@ export default function ProjectWorkspacePage() {
                   </div>
 
                   {/* Clean Idle State */}
-                  {!analysisResult && !docSummaries && !analyzing && !summarizingDocs && (
+                  {!docSummaries && !summarizingDocs && (
                     <div className="mt-6 rounded-xl border border-dashed border-[#e0d9f4] bg-[#fdfcff] p-8 text-center">
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(105,76,197,0.1)] text-xl" style={{ color: '#664bc5' }}>✦</div>
-                      <h3 className="text-base font-semibold" style={{ color: '#1b2440' }}>Select an analysis action to begin.</h3>
+                      <h3 className="text-base font-semibold" style={{ color: '#1b2440' }}>Summarize Project Documents</h3>
                       <p className="mt-1 text-sm max-w-md mx-auto" style={{ color: '#68728a' }}>
-                        Click <strong>Summarize Documents</strong> to generate concise, grounded summaries, key findings, and methodology from this project&apos;s documents without entering any prompt. Or enter a research idea below for full pipeline analysis.
+                        Click <strong>Summarize Documents</strong> to generate concise, grounded summaries, key findings, and methodology from this project&apos;s uploaded documents.
                       </p>
                       <div className="mt-5 flex flex-wrap justify-center gap-3">
                         <button
@@ -870,60 +916,12 @@ export default function ProjectWorkspacePage() {
                     </div>
                   )}
 
-                  {/* Deep Research Idea Form */}
-                  <div className="mt-6 border-t border-[#f0ebfa] pt-6">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Deep Research Analysis (Optional)</p>
-                    <form onSubmit={(e) => { e.preventDefault(); }} className="mt-3">
-                      <textarea
-                        value={analysisIdea}
-                        onChange={(e) => setAnalysisIdea(e.target.value)}
-                        placeholder="Describe a specific research problem or question to analyze against your project documents…"
-                        rows={3}
-                        className="w-full resize-none rounded-xl border border-[#e0d9f4] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#7c60d6]"
-                        style={{ color: '#1d2742' }}
-                      />
-                      <button
-                        onClick={async () => {
-                          if (!token || analysisIdea.trim().length < 5) return;
-                          setAnalyzing(true);
-                          setError('');
-                          try {
-                            const result = await analyzeLocalResearch(token, analysisIdea.trim(), undefined, projectId);
-                            setAnalysisResult(result);
-                            if (token && projectId) {
-                              const docIds = (result._documents_used || []).map((d: any) => d.id).filter(Boolean);
-                              try {
-                                await saveAnalysis(token, projectId, analysisIdea.trim(), docIds, JSON.stringify(result));
-                              } catch {}
-                            }
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : 'Analysis failed.');
-                            setAnalysisResult(null);
-                          } finally {
-                            setAnalyzing(false);
-                          }
-                        }}
-                        disabled={analyzing || !analysisIdea.trim()}
-                        className="mt-3 rounded-xl border border-[#6247bf] bg-white px-5 py-2.5 text-sm font-semibold text-[#6247bf] transition hover:bg-[rgba(105,76,197,0.06)] disabled:opacity-50"
-                      >
-                        {analyzing ? 'Analyzing Idea…' : 'Analyze Research Idea'}
-                      </button>
-                    </form>
-                  </div>
-
                   {/* Loading states */}
                   {summarizingDocs && (
                     <div className="mt-6 rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-6 text-center">
                       <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#e0d9f4] border-t-[#6247bf]" />
                       <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>Summarizing project documents…</p>
                       <p className="mt-1 text-xs" style={{ color: '#68728a' }}>Extracting title, summary, key findings, and methodology from project documents only.</p>
-                    </div>
-                  )}
-
-                  {analyzing && (
-                    <div className="mt-6 rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-6 text-center">
-                      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#e0d9f4] border-t-[#6247bf]" />
-                      <p className="text-sm" style={{ color: '#68728a' }}>Analyzing your documents and research idea…</p>
                     </div>
                   )}
 
@@ -989,219 +987,6 @@ export default function ProjectWorkspacePage() {
                               )}
                             </div>
                           ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {analysisResult && !analyzing && (
-                    <div className="mt-6 space-y-4">
-
-                      {/* Analysis Summary */}
-                      {analysisResult.analysis?.summary && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>📋 Analysis Summary</h3>
-                          <p className="mt-2 text-sm" style={{ color: '#68728a' }}>{analysisResult.analysis.summary}</p>
-                          {analysisResult.analysis.key_findings?.length > 0 && (
-                            <ul className="mt-3 space-y-1">
-                              {analysisResult.analysis.key_findings.map((f: string, i: number) => (
-                                <li key={i} className="flex items-start gap-2 text-xs" style={{ color: '#68728a' }}>
-                                  <span className="mt-0.5" style={{ color: '#664bc5' }}>•</span>
-                                  <span>{f}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Research Problem & Objectives */}
-                      {analysisResult.plan && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🎯 Research Problem &amp; Objectives</h3>
-                          {analysisResult.plan.problem_understanding && (
-                            <p className="mt-2 text-sm leading-relaxed" style={{ color: '#4e5871' }}>
-                              {analysisResult.plan.problem_understanding}
-                            </p>
-                          )}
-                          {analysisResult.plan.objectives?.length > 0 && (
-                            <div className="mt-3">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Objectives</p>
-                              <div className="grid gap-2 sm:grid-cols-3">
-                                {analysisResult.plan.objectives.map((obj: string, i: number) => (
-                                  <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-3">
-                                    <p className="text-[10px] font-bold text-[#6247bf]">OBJECTIVE {i + 1}</p>
-                                    <p className="mt-1 text-xs text-[#4e5871]">{obj}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {analysisResult.plan.research_questions?.length > 0 && (
-                            <div className="mt-4">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Core Research Questions</p>
-                              <div className="space-y-1.5">
-                                {analysisResult.plan.research_questions.map((rq: string, i: number) => (
-                                  <div key={i} className="flex items-start gap-2 text-xs" style={{ color: '#4e5871' }}>
-                                    <span className="shrink-0 rounded-full bg-[rgba(105,76,197,0.1)] px-2 py-0.5 font-bold text-[#6247bf]">RQ{i + 1}</span>
-                                    <span>{rq}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Model & Algorithm Recommendations */}
-                      {analysisResult.plan?.model_recommendations?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🤖 Recommended Models &amp; Algorithms</h3>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                            {analysisResult.plan.model_recommendations.map((m: any, i: number) => (
-                              <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-4">
-                                <span className="rounded-full bg-[rgba(105,76,197,0.08)] px-2 py-0.5 text-[10px] font-semibold text-[#6247bf]">
-                                  Candidate {i + 1}
-                                </span>
-                                <p className="mt-2 text-sm font-semibold" style={{ color: '#1b2440' }}>{m.name}</p>
-                                <p className="mt-1 text-xs leading-relaxed" style={{ color: '#68728a' }}>{m.rationale}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Methodology Recommendations */}
-                      {analysisResult.plan?.methodology_recommendations?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>⚙️ Methodology Recommendations</h3>
-                          <div className="mt-3 space-y-2">
-                            {analysisResult.plan.methodology_recommendations.map((m: any, i: number) => (
-                              <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-3">
-                                <p className="text-xs font-semibold text-[#6247bf]">{m.stage}</p>
-                                <p className="mt-1 text-xs" style={{ color: '#4e5871' }}>{m.details}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Research Gaps */}
-                      {analysisResult.research_gaps?.gaps?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🔍 Research Gaps</h3>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            {analysisResult.research_gaps.gaps.map((gap: any, i: number) => (
-                              <div key={i} className="flex flex-col rounded-lg border border-[#e7e2fa] bg-white p-4">
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="text-sm font-semibold leading-snug" style={{ color: '#1b2440' }}>{gap.title}</p>
-                                  {gap.importance && (
-                                    <span className="shrink-0 rounded-full bg-[rgba(105,76,197,0.08)] px-2 py-0.5 text-[10px] font-medium" style={{ color: '#664bc5' }}>{gap.importance}</span>
-                                  )}
-                                </div>
-                                <p className="mt-2 flex-1 text-xs leading-relaxed" style={{ color: '#68728a' }}>{gap.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Dataset Recommendations */}
-                      {analysisResult.datasets?.recommendations?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>📊 Dataset Recommendations</h3>
-                          <div className="mt-3 space-y-2">
-                            {analysisResult.datasets.recommendations.map((ds: any, i: number) => (
-                              <div key={i} className="flex items-start justify-between rounded-lg border border-[#e7e2fa] bg-white p-3">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>{ds.name}</p>
-                                  <p className="mt-1 text-xs" style={{ color: '#68728a' }}>{ds.purpose}</p>
-                                  <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>Source: {ds.source} · {ds.use}</p>
-                                </div>
-                                {ds.url ? (
-                                  <a href={ds.url} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg bg-[#6247bf] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#5538a8]">
-                                    Open Dataset →
-                                  </a>
-                                ) : (
-                                  <span className="shrink-0 text-xs" style={{ color: '#8790a4' }}>Source link unavailable</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Experiments */}
-                      {analysisResult.experiments?.experiments?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🧪 Suggested Experiments</h3>
-                          <div className="mt-3 space-y-2">
-                            {analysisResult.experiments.experiments.map((exp: any, i: number) => (
-                              <div key={i} className="rounded-lg border border-[#e7e2fa] bg-white p-3">
-                                <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>{exp.name}</p>
-                                <p className="mt-1 text-xs" style={{ color: '#68728a' }}>{exp.objective}</p>
-                                {exp.metrics?.length > 0 && (
-                                  <div className="mt-2 flex flex-wrap gap-1">
-                                    {exp.metrics.map((m: string, j: number) => (
-                                      <span key={j} className="rounded-full bg-[rgba(105,76,197,0.08)] px-2 py-0.5 text-xs" style={{ color: '#664bc5' }}>{m}</span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Roadmap */}
-                      {analysisResult.roadmap?.milestones?.length > 0 && (
-                        <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-5">
-                          <h3 className="font-semibold" style={{ color: '#1b2440' }}>🗺️ Research Roadmap</h3>
-                          <ol className="mt-3 space-y-2">
-                            {analysisResult.roadmap.milestones.map((m: any, i: number) => (
-                              <li key={i} className="flex gap-3 rounded-lg border border-[#e7e2fa] bg-white p-3">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#6247bf] text-xs font-bold text-white">{i + 1}</span>
-                                <div>
-                                  <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>{m.title}</p>
-                                  <p className="mt-1 text-xs" style={{ color: '#68728a' }}>{m.description}</p>
-                                </div>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
-                      )}
-
-                      {/* Challenges, Novelty & Future Work */}
-                      {(analysisResult.plan?.expected_challenges || analysisResult.plan?.potential_novelty || analysisResult.plan?.future_work) && (
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          {analysisResult.plan?.expected_challenges?.length > 0 && (
-                            <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 p-4">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Risk Assessment</p>
-                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Expected Challenges</h4>
-                              <ul className="mt-2 space-y-1.5 text-xs text-slate-600">
-                                {analysisResult.plan.expected_challenges.map((ch: string, idx: number) => (
-                                  <li key={idx} className="flex items-start gap-1.5">
-                                    <span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                                    <span>{ch}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {analysisResult.plan?.potential_novelty && (
-                            <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 p-4">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Innovation</p>
-                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Potential Novelty</h4>
-                              <p className="mt-2 text-xs leading-relaxed text-slate-600">{analysisResult.plan.potential_novelty}</p>
-                            </div>
-                          )}
-                          {analysisResult.plan?.future_work && (
-                            <div className="rounded-xl border border-blue-200/60 bg-blue-50/40 p-4">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Looking Forward</p>
-                              <h4 className="mt-1 text-sm font-semibold text-slate-800">Future Work</h4>
-                              <p className="mt-2 text-xs leading-relaxed text-slate-600">{analysisResult.plan.future_work}</p>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1350,14 +1135,26 @@ export default function ProjectWorkspacePage() {
                             {/* Add item form */}
                             {esAddItemSessionId === session.id ? (
                               <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-white border border-dashed border-[#e0d9f4] p-3">
-                                <select value={esAddItemType} onChange={(e) => setEsAddItemType(e.target.value as 'reference' | 'document')} className="rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none" style={{ color: '#1d2742' }}>
+                                <select value={esAddItemType} onChange={(e) => { setEsAddItemType(e.target.value as 'reference' | 'document'); setEsAddItemId(''); }} className="rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none" style={{ color: '#1d2742' }}>
                                   <option value="reference">Reference</option>
                                   <option value="document">Document</option>
                                 </select>
-                                <input value={esAddItemId} onChange={(e) => setEsAddItemId(e.target.value)} placeholder={esAddItemType === 'reference' ? 'Reference ID' : 'Document ID'} className="w-24 rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none" style={{ color: '#1d2742' }} />
+                                {esAddItemType === 'reference' && references.length > 0 ? (
+                                  <select value={esAddItemId} onChange={(e) => setEsAddItemId(e.target.value)} className="rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none max-w-xs" style={{ color: '#1d2742' }}>
+                                    <option value="">Select a reference...</option>
+                                    {references.map((r) => <option key={r.id} value={r.id}>#{r.id} — {r.title}</option>)}
+                                  </select>
+                                ) : esAddItemType === 'document' && documents.length > 0 ? (
+                                  <select value={esAddItemId} onChange={(e) => setEsAddItemId(e.target.value)} className="rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none max-w-xs" style={{ color: '#1d2742' }}>
+                                    <option value="">Select a document...</option>
+                                    {documents.map((d) => <option key={d.id} value={d.id}>#{d.id} — {d.filename}</option>)}
+                                  </select>
+                                ) : (
+                                  <input value={esAddItemId} onChange={(e) => setEsAddItemId(e.target.value)} placeholder={esAddItemType === 'reference' ? 'Reference ID' : 'Document ID'} className="w-24 rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none" style={{ color: '#1d2742' }} />
+                                )}
                                 <input value={esAddItemNote} onChange={(e) => setEsAddItemNote(e.target.value)} placeholder="Note (optional)" className="flex-1 rounded-lg border border-[#e0d9f4] bg-white px-3 py-1.5 text-xs outline-none" style={{ color: '#1d2742' }} />
-                                <button onClick={() => handleAddEvidenceSessionItem(session.id)} className="rounded-lg bg-[#6247bf] px-3 py-1.5 text-xs font-semibold text-white">Add</button>
-                                <button onClick={() => setEsAddItemSessionId(null)} className="rounded-lg border border-[#e0d9f4] px-3 py-1.5 text-xs" style={{ color: '#8790a4' }}>Cancel</button>
+                                <button disabled={!esAddItemId} onClick={() => handleAddEvidenceSessionItem(session.id)} className="rounded-lg bg-[#6247bf] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Add</button>
+                                <button onClick={() => { setEsAddItemSessionId(null); setEsAddItemId(''); }} className="rounded-lg border border-[#e0d9f4] px-3 py-1.5 text-xs" style={{ color: '#8790a4' }}>Cancel</button>
                               </div>
                             ) : (
                               <button onClick={() => setEsAddItemSessionId(session.id)} className="mt-3 text-xs font-medium transition" style={{ color: '#664bc5' }}>+ Add Evidence / Reference</button>

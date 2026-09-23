@@ -14,6 +14,7 @@ from app.services.roadmap_service import RoadmapService
 router = APIRouter()
 
 
+@router.post("")
 @router.post("/")
 def create_project(payload: ProjectCreateRequest, db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     repo = ProjectRepository(db)
@@ -21,6 +22,7 @@ def create_project(payload: ProjectCreateRequest, db: Session = Depends(get_db),
     return {"id": project.id, "title": project.title, "domain": project.domain, "description": getattr(project, 'description', None), "status": project.status, "user_id": user_id}
 
 
+@router.get("")
 @router.get("/")
 def list_projects(db: Session = Depends(get_db), user_id: int = Depends(get_current_user)):
     projects = ProjectRepository(db).list_for_owner(user_id)
