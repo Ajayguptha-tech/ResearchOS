@@ -1,0 +1,42 @@
+﻿python : [Assistant] LLM returned status 404: {"error":"model 'llama3.1' not found"}
+At line:1 char:57
++ ... \Desktop\master\ResearchOS\backend'; python test_full.py 2>&1 | Out-F ...
++                                          ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([Assistant] LLM....1' not found"}:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+============================================================
+RESEARCHOS FULL API TEST SUITE
+============================================================
+  [PASS] Register
+  [PASS] Duplicate email registration
+  [PASS] Login
+  [PASS] Wrong password
+  [PASS] Get profile
+  [PASS] Create project
+  [PASS] List projects
+  [PASS] Get project with description
+  [PASS] Upload TXT document
+  [PASS] Upload PDF
+  [PASS] Upload DOCX
+  [PASS] List project documents
+  [PASS] Get document content
+  [PASS] Get document summary
+  [PASS] Create reference
+  [PASS] List references
+  [PASS] Get reference
+  [PASS] Delete reference
+  [PASS] AI Analysis with document content
+  [PASS] Save analysis
+  [PASS] List analyses
+  [PASS] Paper editor create and read
+  [PASS] Create and list reminders
+  [PASS] Research Assistant
+  [PASS] Delete document
+  [PASS] Delete project
+  [PASS] Cross-user ownership protection
+  [PASS] Health check
+
+Results: 28 passed, 0 failed, 28 total
+OVERALL: ALL TESTS PASSED

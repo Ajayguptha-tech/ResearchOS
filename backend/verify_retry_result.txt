@@ -1,0 +1,18 @@
+﻿OK  Retry constants verified
+OK  Retry-After header parsing works
+OK  Retry-After clamping works
+OK  No Retry-After returns 0.0
+OK  Scoring model verified: scores = [85, 58, 34]
+OK  Old highly-cited (58) > New low-cited (34)
+OK  Error message: Literature providers returned no usable papers. Try a more specific or simpler r...
+python : Traceback (most recent call last):
+At line:1 char:57
++ ... sktop\master\ResearchOS\backend'; python verify_retry.py 2>&1 | Out-F ...
++                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\LENOVO\Desktop\master\ResearchOS\backend\verify_retry.py", line 74, in <module>
+    assert "rate limit" in msg_rl.lower()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

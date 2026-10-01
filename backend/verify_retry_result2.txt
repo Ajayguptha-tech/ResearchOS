@@ -1,0 +1,11 @@
+﻿OK  Retry constants verified
+OK  Retry-After header parsing works
+OK  Retry-After clamping works
+OK  No Retry-After returns 0.0
+OK  Scoring model verified: scores = [85, 58, 34]
+OK  Old highly-cited (58) > New low-cited (34)
+OK  Error message: Literature providers returned no usable papers. Try a more specific or simpler r...
+  Rate-limit message: 'Literature providers are temporarily rate-limiting requests. Please wait a moment and try again with'
+OK  Rate-limit message verified
+
+All verifications passed!

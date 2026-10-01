@@ -1,0 +1,14 @@
+﻿=== IMPORT CHECKS ===
+  FAIL literature_search_agent: No module named 'ai'
+  OK  assistant route
+  OK  evidence_sessions route
+  OK  main app
+  OK  models
+
+=== LITERATURE AGENT SCORING TEST ===
+  Score:  80/100 | Citations:   500 | Impact: High   | Recency: High   | Title: Deep learning for NLP
+  Score:  67/100 | Citations:  1200 | Impact: High   | Recency: Medium | Title: A survey of ML methods
+  Score:  54/100 | Citations:    50 | Impact: Medium | Recency: High   | Title: Recent advances in transformers
+  OK  Scoring model works
+
+Some checks failed!

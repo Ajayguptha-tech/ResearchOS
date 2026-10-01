@@ -1,0 +1,60 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\LENOVO\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\LENOVO\Desktop\master\ResearchOS\backend
+plugins: anyio-4.14.2, langsmith-0.11.1
+collecting ... collected 20 items
+
+tests/test_followups.py::test_followup_lifecycle_and_owner_isolation PASSED [  5%]
+tests/test_followups.py::test_preferences_and_consent_gate_voice PASSED  [ 10%]
+tests/test_followups.py::test_due_in_app_reminder_creates_notification_and_log PASSED [ 15%]
+tests/test_health.py::test_health PASSED                                 [ 20%]
+tests/test_law.py::test_law_project_preserves_source_provenance_and_privacy PASSED [ 25%]
+tests/test_law.py::test_law_source_rejects_unclassified_result PASSED    [ 30%]
+tests/test_papers.py::test_paper_crud_import_and_search PASSED           [ 35%]
+tests/test_papers.py::test_papers_are_private_and_search_requires_query PASSED [ 40%]
+tests/test_papers.py::test_local_document_upload_and_retrieval_are_owner_scoped PASSED [ 45%]
+tests/test_projects.py::test_projects_require_authentication PASSED      [ 50%]
+tests/test_projects.py::test_projects_are_scoped_to_authenticated_owner PASSED [ 55%]
+tests/test_projects.py::test_login_returns_token_for_registered_user PASSED [ 60%]
+tests/test_projects.py::test_login_rejects_invalid_password PASSED       [ 65%]
+tests/test_projects.py::test_research_workflow_persists_ideas_and_plans PASSED [ 70%]
+tests/test_projects.py::test_missing_or_foreign_project_plan_is_not_accessible PASSED [ 75%]
+tests/test_research.py::test_literature_search_parses_metadata_and_supplements_crossref PASSED [ 80%]
+tests/test_research.py::test_research_route_requires_auth_and_maps_provider_failure PASSED [ 85%]
+tests/test_research.py::test_local_document_analysis_uses_uploaded_evidence_without_providers PASSED [ 90%]
+tests/test_supervisor_notifications.py::test_supervisor_review_creates_owner_notification PASSED [ 95%]
+tests/test_supervisor_notifications.py::test_review_and_notifications_are_authorized PASSED [100%]
+
+============================== warnings summary ===============================
+tests/test_followups.py: 8 warnings
+tests/test_law.py: 6 warnings
+tests/test_papers.py: 6 warnings
+tests/test_projects.py: 11 warnings
+tests/test_research.py: 3 warnings
+tests/test_supervisor_notifications.py: 8 warnings
+  C:\Users\LENOVO\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\sqlalchemy\sql\schema.py:3627: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return util.wrap_callable(lambda ctx: fn(), fn)  # type: ignore
+
+tests/test_followups.py::test_followup_lifecycle_and_owner_isolation
+  C:\Users\LENOVO\Desktop\master\ResearchOS\backend\app\api\v1\routes\followups.py:100: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    followup.snoozed_until = datetime.utcnow() + timedelta(hours=hours)
+
+tests/test_followups.py::test_followup_lifecycle_and_owner_isolation
+  C:\Users\LENOVO\Desktop\master\ResearchOS\backend\app\api\v1\routes\followups.py:88: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    followup.completed_at = datetime.utcnow()
+
+tests/test_followups.py::test_due_in_app_reminder_creates_notification_and_log
+  C:\Users\LENOVO\Desktop\master\ResearchOS\backend\tests\test_followups.py:75: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    json={"followup_id": followup["id"], "channel": "in_app", "remind_at": (datetime.utcnow() - timedelta(minutes=1)).isoformat()},
+
+tests/test_followups.py::test_due_in_app_reminder_creates_notification_and_log
+  C:\Users\LENOVO\Desktop\master\ResearchOS\backend\app\services\reminder_service.py:43: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = now or datetime.utcnow()
+
+tests/test_supervisor_notifications.py::test_supervisor_review_creates_owner_notification
+  C:\Users\LENOVO\Desktop\master\ResearchOS\backend\app\db\repositories\notification_repository.py:30: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    notification.read_at = datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+====================== 20 passed, 47 warnings in 11.53s =======================
