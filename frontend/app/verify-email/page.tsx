@@ -16,6 +16,8 @@ export default function VerifyEmailPage() {
   const [countdown, setCountdown] = useState(60);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isVerifyingRef = useRef(false);
+  const isResendingRef = useRef(false);
 
   const [emailStatus, setEmailStatus] = useState("");
   const [emailDetail, setEmailDetail] = useState("");
@@ -74,33 +76,48 @@ export default function VerifyEmailPage() {
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
+    if (isVerifyingRef.current || loading) return;
     const otpString = otp.join("");
     if (otpString.length !== 6 || !email) return;
+
+    isVerifyingRef.current = true;
     setLoading(true);
     setError("");
     try {
-      await verifyEmail(email, otpString, verifyToken || undefined);
+      const res = await verifyEmail(email, otpString, verifyToken || undefined);
+      if (res && res.access_token) {
+        localStorage.setItem("access_token", res.access_token);
+      }
       localStorage.removeItem("verify_email");
       localStorage.removeItem("verify_token");
+      localStorage.removeItem("email_status");
+      localStorage.removeItem("email_detail");
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
       setLoading(false);
+      isVerifyingRef.current = false;
     }
   }
 
   async function handleResend() {
-    if (!email || countdown > 0) return;
+    if (!email || countdown > 0 || isResendingRef.current || resending) return;
+    isResendingRef.current = true;
     setResending(true);
     setError("");
     try {
-      await resendOtp(email, verifyToken || undefined);
-      setCountdown(60);
+      const res = await resendOtp(email, verifyToken || undefined);
+      if (res.email_status) setEmailStatus(res.email_status);
+      if (res.email_detail) setEmailDetail(res.email_detail);
+      setCountdown(res.expires_in_seconds ? Math.min(res.expires_in_seconds, 60) : 60);
+      setOtp(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resend code.");
     } finally {
       setResending(false);
+      isResendingRef.current = false;
     }
   }
 

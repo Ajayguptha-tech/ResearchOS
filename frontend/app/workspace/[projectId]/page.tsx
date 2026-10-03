@@ -124,6 +124,7 @@ export default function ProjectWorkspacePage() {
   const [reminderTitle, setReminderTitle] = useState('');
   const [reminderDesc, setReminderDesc] = useState('');
   const [reminderDatetime, setReminderDatetime] = useState('');
+  const [reminderTimezone, setReminderTimezone] = useState('Asia/Kolkata');
 
   // Evidence Sessions
   const [evidenceSessions, setEvidenceSessions] = useState<EvidenceSession[]>([]);
@@ -235,6 +236,14 @@ export default function ProjectWorkspacePage() {
       setReminders(r);
     } catch {}
   }
+
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      loadReminders(token);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [token]);
 
 
   async function loadReferences(accessToken: string, pid: number) {
@@ -490,11 +499,20 @@ export default function ProjectWorkspacePage() {
     loadData(saved);
   }, [projectId]);
 
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      loadReminders(token);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [token]);
+
   // === DOCUMENT UPLOAD ===
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!token) return;
-    const file = new FormData(e.currentTarget).get('document');
+    const formElement = e.currentTarget;
+    const file = new FormData(formElement).get('document');
     if (!(file instanceof File) || file.size === 0) return;
     setUploadStatus('');
     setUploading(true);
@@ -503,7 +521,7 @@ export default function ProjectWorkspacePage() {
       const doc = await uploadResearchDocument(token, file, undefined, projectId);
       setDocuments((prev) => [doc, ...prev]);
       setUploadStatus(`Uploaded ${doc.filename} — ${doc.extracted_characters.toLocaleString()} characters extracted`);
-      e.currentTarget.reset();
+      formElement?.reset();
     } catch (err) {
       setUploadStatus('');
       setError(err instanceof Error ? err.message : 'Upload failed.');
@@ -562,7 +580,7 @@ export default function ProjectWorkspacePage() {
     e.preventDefault();
     if (!token) return;
     try {
-      const r = await createReminder(token, reminderTitle, reminderDesc || null, reminderDatetime);
+      const r = await createReminder(token, reminderTitle, reminderDesc || null, reminderDatetime, reminderTimezone || 'Asia/Kolkata');
       setReminders((prev) => [...prev, r]);
       setReminderTitle('');
       setReminderDesc('');
@@ -599,16 +617,53 @@ export default function ProjectWorkspacePage() {
     router.push('/login');
   }
 
-  function formatReminderDate(dt: string) {
-    const date = new Date(dt);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (diffDays === 0) return `Today, ${timeStr}`;
-    if (diffDays === 1) return `Tomorrow, ${timeStr}`;
-    if (diffDays < 0) return `Overdue (${Math.abs(diffDays)} days ago)`;
-    return `${date.toLocaleDateString()} ${timeStr}`;
+  function formatReminderDate(dt: string, tz?: string) {
+    const targetTz = tz || 'Asia/Kolkata';
+    try {
+      const date = new Date(dt);
+      if (isNaN(date.getTime())) return dt;
+
+      // Extract calendar day in target timezone
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: targetTz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const now = new Date();
+      const targetDayStr = formatter.format(date);
+      const todayDayStr = formatter.format(now);
+
+      const [tY, tM, tD] = targetDayStr.split('-').map(Number);
+      const [nY, nM, nD] = todayDayStr.split('-').map(Number);
+      const targetCal = new Date(tY, tM - 1, tD).getTime();
+      const todayCal = new Date(nY, nM - 1, nD).getTime();
+      const dayDiff = Math.round((targetCal - todayCal) / 86400000);
+
+      const timeStr = date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: targetTz,
+      });
+
+      if (dayDiff === 0) {
+        return `Today at ${timeStr}`;
+      } else if (dayDiff === 1) {
+        return `Tomorrow at ${timeStr}`;
+      } else if (dayDiff === -1) {
+        return `Yesterday at ${timeStr}`;
+      } else {
+        const dateStr = date.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: targetTz,
+        });
+        return `${dateStr} at ${timeStr}`;
+      }
+    } catch {
+      return dt;
+    }
   }
 
   const wordCount = paperContent.trim() ? paperContent.trim().split(/\s+/).length : 0;
@@ -695,7 +750,7 @@ export default function ProjectWorkspacePage() {
                   </div>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
-                      <p className="text-xs font-medium text-slate-400">Documents</p>
+                      <p className="text-xs font-medium text-slate-400">Sources Evaluated</p>
                       <p className="mt-1 text-2xl font-bold" style={{ color: '#6549c8' }}>{documents.length}</p>
                     </div>
                     <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
@@ -1269,6 +1324,11 @@ export default function ProjectWorkspacePage() {
                                 )}
                               </div>
 
+                              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900 flex items-center gap-2">
+                                <span className="font-bold text-amber-800">AI-Generated Research Paper Draft / Reference</span>
+                                <span className="text-amber-700">— This document is an AI-generated draft intended for research scoping, reference, and synthesis. It is NOT an already published or peer-reviewed academic paper.</span>
+                              </div>
+
                               <textarea
                                 value={activeDraft.content}
                                 onChange={(e) => setActiveDraft({ ...activeDraft, content: e.target.value })}
@@ -1321,9 +1381,13 @@ export default function ProjectWorkspacePage() {
                         <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>Create your first reminder to stay organized.</p>
                       </div>
                     ) : reminders.map((r) => {
-                      const isOverdue = r.status !== 'completed' && new Date(r.reminder_datetime) < new Date();
-                      const isDueSoon = !isOverdue && r.status !== 'completed' && (new Date(r.reminder_datetime).getTime() - Date.now()) < 86400000;
-                      const sc = r.status === 'completed' ? 'completed' : isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : 'upcoming';
+                      const isCompleted = r.status === 'completed';
+                      const isCancelled = r.status === 'cancelled';
+                      const isSent = r.email_sent || r.status === 'sent';
+                      const isOverdue = !isCompleted && !isCancelled && !isSent && new Date(r.reminder_datetime) < new Date();
+                      const isDueSoon = !isCompleted && !isCancelled && !isSent && !isOverdue && (new Date(r.reminder_datetime).getTime() - Date.now()) < 86400000;
+                      const sc = isCompleted ? 'completed' : isCancelled ? 'cancelled' : isSent ? 'sent' : isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : 'upcoming';
+                      const statusLabel = isCompleted ? '✓ Completed' : isCancelled ? 'Cancelled' : isSent ? '✓ Email Sent' : isOverdue ? 'Due' : isDueSoon ? 'Due soon' : 'Upcoming';
                       return (
                         <article key={r.id} className={`reminder-card status-${sc}`}>
                           <div className="flex items-start justify-between gap-4">
@@ -1331,11 +1395,19 @@ export default function ProjectWorkspacePage() {
                               <h3 className="font-semibold" style={{ color: '#1b2440' }}>{r.title}</h3>
                               {r.description && <p className="mt-1 text-sm text-slate-400">{r.description}</p>}
                               <p className="mt-2 text-xs text-slate-500">
-                                {r.status === 'completed' ? `Completed ${new Date(r.updated_at).toLocaleDateString()}` : formatReminderDate(r.reminder_datetime)}
+                                {isCompleted
+                                  ? `Completed ${new Date(r.updated_at).toLocaleDateString()}`
+                                  : `Scheduled for: ${formatReminderDate(r.reminder_datetime, r.timezone)} (${r.timezone || 'Asia/Kolkata'})`
+                                }
                               </p>
+                              {r.email_sent && r.email_sent_at && (
+                                <p className="mt-1 text-xs text-indigo-600 font-medium">
+                                  Email dispatched: {new Date(r.email_sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: r.timezone || 'Asia/Kolkata' })}
+                                </p>
+                              )}
                             </div>
                             <span className={`reminder-status-badge shrink-0 ${sc}`}>
-                              {r.status === 'completed' ? '✓ Completed' : isOverdue ? 'Overdue' : isDueSoon ? 'Due soon' : 'Upcoming'}
+                              {statusLabel}
                             </span>
                           </div>
                           {r.status !== 'completed' && (
@@ -1363,6 +1435,20 @@ export default function ProjectWorkspacePage() {
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-500">Date & time</label>
                         <input required type="datetime-local" value={reminderDatetime} onChange={(e) => setReminderDatetime(e.target.value)} className="w-full rounded-lg border border-[#e0d9f4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7c60d6]" style={{ color: '#1d2742' }} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Timezone</label>
+                        <select
+                          value={reminderTimezone}
+                          onChange={(e) => setReminderTimezone(e.target.value)}
+                          className="w-full rounded-lg border border-[#e0d9f4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7c60d6]"
+                          style={{ color: '#1d2742' }}
+                        >
+                          <option value="Asia/Kolkata">Asia/Kolkata (IST — India Standard Time)</option>
+                          <option value="UTC">UTC (Coordinated Universal Time)</option>
+                          <option value="America/New_York">America/New_York (EST / EDT)</option>
+                          <option value="Europe/London">Europe/London (GMT / BST)</option>
+                        </select>
                       </div>
                       <button className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}>Create reminder</button>
                     </div>

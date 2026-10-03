@@ -375,6 +375,10 @@ main.min-h-screen.bg-slate-950 .rounded-2xl:hover, main.min-h-screen.bg-slate-95
   background: #6ab89a;
 }
 
+.reminder-card.status-sent::before {
+  background: #7c60d6;
+}
+
 .reminder-card.status-overdue::before {
   background: #d66060;
 }
@@ -397,6 +401,11 @@ main.min-h-screen.bg-slate-950 .rounded-2xl:hover, main.min-h-screen.bg-slate-95
 .reminder-status-badge.upcoming {
   background: rgba(105, 76, 197, 0.08);
   color: #664bc5;
+}
+
+.reminder-status-badge.sent {
+  background: rgba(105, 76, 197, 0.15);
+  color: #5538a8;
 }
 
 .reminder-status-badge.due-soon {

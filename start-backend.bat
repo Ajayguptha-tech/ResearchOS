@@ -14,6 +14,5 @@ python -m pip install -r requirements.txt || exit /b 1
 set DATABASE_URL=sqlite:///./data/researchos.db
 set AI_PROVIDER=local
 set CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004
-REM Email provider: "console" (dev) or "smtp" (real email)
-if not defined EMAIL_PROVIDER set EMAIL_PROVIDER=console
+REM Email provider is loaded from backend/.env (defaults to resend/smtp as configured)
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

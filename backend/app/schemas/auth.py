@@ -33,7 +33,7 @@ class MessageResponse(BaseModel):
 
 class OtpSentResponse(BaseModel):
     message: str
-    expires_in_seconds: int = 600
+    expires_in_seconds: int = 300
     email_status: str = "sent"
     email_detail: str = ""
 
@@ -43,3 +43,14 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     email_status: str = ""
     email_detail: str = ""
+    message: str = ""
+
+
+class RegistrationResponse(BaseModel):
+    message: str = "Verification code sent to your email."
+    email: str
+    require_verification: bool = True
+    email_status: str = "sent"
+    email_detail: str = ""
+    access_token: str = ""
+    token_type: str = "bearer"

@@ -40,6 +40,8 @@ class PaperDraftResponse(BaseModel):
     source_document_ids: list[int] = Field(default_factory=list)
     source_paper_ids: list[int] = Field(default_factory=list)
     current_version: int
+    draft_classification: str = "AI-Generated Research Paper Draft / Reference"
+    is_published: bool = False
     created_at: datetime
     updated_at: datetime
     versions: list[PaperDraftVersionResponse] = Field(default_factory=list)
@@ -74,6 +76,8 @@ class PaperDraftResponse(BaseModel):
             source_document_ids=doc_ids,
             source_paper_ids=paper_ids,
             current_version=draft.current_version,
+            draft_classification="AI-Generated Research Paper Draft / Reference",
+            is_published=False,
             created_at=draft.created_at,
             updated_at=draft.updated_at,
             versions=[

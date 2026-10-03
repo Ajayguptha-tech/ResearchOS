@@ -10,14 +10,18 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Fast in-memory TTL cache for literature searches (15-minute expiry)
+_SEARCH_CACHE: dict[str, tuple[float, dict]] = {}
+_CACHE_TTL = 900.0
+
 
 class LiteratureSearchAgent:
     # Maximum retries per provider on 429 rate-limit
-    _MAX_RETRIES = 3
+    _MAX_RETRIES = 2
     # Base delay in seconds for exponential backoff
-    _BASE_BACKOFF = 2.0
+    _BASE_BACKOFF = 0.5
     # Delay between queries to the same provider
-    _QUERY_DELAY = 1.0
+    _QUERY_DELAY = 0.2
 
     def __init__(self) -> None:
         self.name = "Literature Search Agent"
@@ -58,6 +62,14 @@ class LiteratureSearchAgent:
                 "source": "Academic Search",
                 "message": "Research topic cannot be empty.",
             }
+
+        cache_key = f"{query.lower()}:{max_results}"
+        now_ts = time.time()
+        if cache_key in _SEARCH_CACHE:
+            ts, cached_res = _SEARCH_CACHE[cache_key]
+            if now_ts - ts < _CACHE_TTL:
+                logger.info("[Research] Cache HIT for literature query %r", query)
+                return cached_res
 
         # Dynamic 20-year publication window
         current_year = datetime.now().year
@@ -143,7 +155,7 @@ class LiteratureSearchAgent:
 
         total_found = len(ranked_results)
 
-        return {
+        output = {
             "query": query,
             "results": ranked_results,
             "total": total_found,
@@ -156,6 +168,9 @@ class LiteratureSearchAgent:
             ),
             "provider_errors": self.provider_errors,
         }
+        if ranked_results:
+            _SEARCH_CACHE[cache_key] = (now_ts, output)
+        return output
 
     def _no_results_message(self) -> str:
         if not self.provider_errors:
@@ -209,18 +224,10 @@ class LiteratureSearchAgent:
 
     def _build_queries(self, query: str) -> list[str]:
         base = query.strip()
-
-        queries = [
-            base,
-            f'"{base}"',
-            f"{base} literature review",
-            f"{base} research methods",
-            f"{base} survey",
-        ]
-
-        queries.append(f"{base} research")
-
-        return list(dict.fromkeys(queries))
+        queries = [base]
+        if not base.lower().endswith("research"):
+            queries.append(f"{base} research")
+        return queries
 
     # ======================================================
     # SEMANTIC SCHOLAR

@@ -19,7 +19,11 @@ export type Reminder = {
   title: string;
   description: string | null;
   reminder_datetime: string;
+  timezone?: string;
   status: string;
+  email_sent?: boolean;
+  email_sent_at?: string | null;
+  last_error?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -202,8 +206,19 @@ export type ResearchAnalysis = {
       source: string;
       use: string;
       url?: string;
+      why_matched?: string;
+      matching_criteria?: string;
     }>;
 
+    general_repositories?: Array<{
+      name: string;
+      purpose: string;
+      source: string;
+      use?: string;
+      url?: string;
+    }>;
+
+    message?: string;
     status: string;
   };
 
@@ -303,7 +318,8 @@ async function request<T>(
       },
     });
   } catch (error) {
-    if (retries > 0 && error instanceof TypeError) {
+    const isIdempotent = !options.method || options.method.toUpperCase() === 'GET';
+    if (retries > 0 && isIdempotent && error instanceof TypeError) {
       await sleep(BASE_RETRY_DELAY);
       return request<T>(path, options, token, retries - 1);
     }
@@ -376,7 +392,7 @@ export function getMe(token: string) {
 // ---------------------------------------------------------
 
 export function verifyEmail(email: string, otp: string, token?: string) {
-  return request<{ message: string }>(
+  return request<{ message: string; access_token?: string; token_type?: string; email_status?: string; email_detail?: string }>(
     '/api/v1/auth/verify-email',
     {
       method: 'POST',
@@ -387,7 +403,7 @@ export function verifyEmail(email: string, otp: string, token?: string) {
 }
 
 export function resendOtp(email: string, token?: string) {
-  return request<{ message: string; expires_in_seconds: number }>(
+  return request<{ message: string; expires_in_seconds: number; email_status?: string; email_detail?: string }>(
     '/api/v1/auth/resend-otp',
     {
       method: 'POST',
@@ -439,7 +455,8 @@ export function createReminder(
   token: string,
   title: string,
   description: string | null,
-  reminderDatetime: string
+  reminderDatetime: string,
+  timezone?: string
 ) {
   return request<Reminder>(
     '/api/v1/reminders',
@@ -449,6 +466,7 @@ export function createReminder(
         title,
         description,
         reminder_datetime: reminderDatetime,
+        timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
       }),
     },
     token
@@ -458,7 +476,7 @@ export function createReminder(
 export function updateReminder(
   token: string,
   reminderId: number,
-  data: { title?: string; description?: string | null; reminder_datetime?: string }
+  data: { title?: string; description?: string | null; reminder_datetime?: string; timezone?: string; status?: string }
 ) {
   return request<Reminder>(
     `/api/v1/reminders/${reminderId}`,
@@ -466,6 +484,14 @@ export function updateReminder(
       method: 'PATCH',
       body: JSON.stringify(data),
     },
+    token
+  );
+}
+
+export function cancelReminder(token: string, reminderId: number) {
+  return request<Reminder>(
+    `/api/v1/reminders/${reminderId}/cancel`,
+    { method: 'POST' },
     token
   );
 }
@@ -482,6 +508,22 @@ export function deleteReminder(token: string, reminderId: number) {
   return request<void>(
     `/api/v1/reminders/${reminderId}`,
     { method: 'DELETE' },
+    token
+  );
+}
+
+export function sendReminderNow(token: string, reminderId: number) {
+  return request<Reminder>(
+    `/api/v1/reminders/${reminderId}/send-now`,
+    { method: 'POST' },
+    token
+  );
+}
+
+export function checkDueReminders(token: string) {
+  return request<{ processed: number }>(
+    '/api/v1/reminders/check-due',
+    { method: 'POST' },
     token
   );
 }

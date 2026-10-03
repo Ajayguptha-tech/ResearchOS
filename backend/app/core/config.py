@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     vector_store_path: str = "./data/vector_store"
     upload_dir: str = "./data/uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
-    email_provider: str = "console"
-    email_from: str = "researchos@localhost"
+    email_provider: str = "brevo"
+    email_from: str = ""
+    brevo_api_key: str = ""
+    resend_api_key: str = ""
+    resend_from: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -42,6 +45,16 @@ class Settings(BaseSettings):
     voice_provider: str = "mock"
     followup_enabled: bool = True
     followup_default_days: int = 7
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if isinstance(value, str) and value.startswith("sqlite:///./data/"):
+            db_path = (_BACKEND_DIR / "data" / value[len("sqlite:///./data/"):]).resolve()
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            # Use forward slashes for SQLite URI on Windows
+            return f"sqlite:///{db_path.as_posix()}"
+        return value
 
     @field_validator("debug", mode="before")
     @classmethod

@@ -112,7 +112,20 @@ export default function LoginPage() {
               {/* Error */}
               {error && (
                 <div className="rounded-xl border border-[rgba(180,76,76,0.25)] bg-[rgba(180,76,76,0.06)] px-4 py-3 text-sm" style={{ color: '#b44c4c' }}>
-                  {error}
+                  <p>{error}</p>
+                  {error.toLowerCase().includes("verify your email") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem("verify_email", email.trim().toLowerCase());
+                        router.push("/verify-email");
+                      }}
+                      className="mt-2 text-xs font-semibold underline"
+                      style={{ color: "#6247bf" }}
+                    >
+                      Enter verification code →
+                    </button>
+                  )}
                 </div>
               )}
 

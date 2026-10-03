@@ -8,15 +8,16 @@ class RoadmapGeneratorAgent:
     def generate(
         self,
         idea: str,
-        analysis: dict,
+        analysis: dict | None = None,
         gaps: dict | None = None,
         datasets: dict | None = None,
         experiments: dict | None = None,
     ) -> dict:
 
-        gaps = gaps or {}
-        datasets = datasets or {}
-        experiments = experiments or {}
+        analysis = analysis if isinstance(analysis, dict) else {}
+        gaps = gaps if isinstance(gaps, dict) else {}
+        datasets = datasets if isinstance(datasets, dict) else {}
+        experiments = experiments if isinstance(experiments, dict) else {}
 
         papers_processed = analysis.get("papers_processed", 0)
         papers = analysis.get("papers", [])

@@ -39,10 +39,13 @@ export default function ForgotPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(0);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isSubmittingRef = useRef(false);
+  const isResendingRef = useRef(false);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -102,17 +105,38 @@ export default function ForgotPasswordPage() {
 
   async function handleRequestReset(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) return;
+    if (!email || isSubmittingRef.current || loading) return;
+    isSubmittingRef.current = true;
     setLoading(true);
     setError("");
     try {
       await forgotPassword(email);
       setStep("verify");
       setCountdown(60);
+      setOtp(["", "", "", "", "", ""]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send reset code.");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
+    }
+  }
+
+  async function handleResendCode() {
+    if (!email || countdown > 0 || isResendingRef.current || resending) return;
+    isResendingRef.current = true;
+    setResending(true);
+    setError("");
+    try {
+      await forgotPassword(email);
+      setCountdown(60);
+      setOtp(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend code.");
+    } finally {
+      setResending(false);
+      isResendingRef.current = false;
     }
   }
 
@@ -276,11 +300,12 @@ export default function ForgotPasswordPage() {
                   <div className="text-center">
                     <button
                       type="button"
-                      onClick={() => { forgotPassword(email).then(() => setCountdown(60)).catch(() => {}); }}
-                      className="text-sm font-medium"
+                      disabled={resending || countdown > 0}
+                      onClick={handleResendCode}
+                      className="text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
                       style={{ color: "#664bc5" }}
                     >
-                      Resend code
+                      {resending ? "Sending new code…" : "Resend code"}
                     </button>
                   </div>
                 )}

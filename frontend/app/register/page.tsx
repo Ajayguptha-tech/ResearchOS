@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { register } from "../../lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const isSubmittingRef = useRef(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -36,21 +37,30 @@ export default function RegisterPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (isSubmittingRef.current || loading) return;
 
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
     setError("");
 
     try {
       const result = await register(email, password, name);
-      // Store the access token and go directly to dashboard
-      // (no email verification required)
-      localStorage.setItem("access_token", result.access_token);
-      router.push("/dashboard");
+      localStorage.setItem("verify_email", email.trim().toLowerCase());
+      if (result.access_token) {
+        localStorage.setItem("verify_token", result.access_token);
+      }
+      if (result.email_status) {
+        localStorage.setItem("email_status", result.email_status);
+      }
+      if (result.email_detail) {
+        localStorage.setItem("email_detail", result.email_detail);
+      }
+      router.push("/verify-email");
     } catch (err) {
       setError(
         err instanceof Error
@@ -59,6 +69,7 @@ export default function RegisterPage() {
       );
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   }
 
