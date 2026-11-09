@@ -19,8 +19,6 @@ modules = [
     ("app.core.config", "settings"),
     ("app.core.security", "hash_password"),
     ("app.services.document_service", "DocumentService"),
-    ("app.services.otp_service", "create_password_reset_token"),
-    ("app.services.email_service", "send_email"),
     ("ai.agents.paper_analyzer_agent", "PaperAnalyzerAgent"),
     ("ai.agents.research_gap_agent", "ResearchGapAgent"),
     ("ai.agents.dataset_recommendation_agent", "DatasetRecommendationAgent"),

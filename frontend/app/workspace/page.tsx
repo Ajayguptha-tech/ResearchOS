@@ -17,25 +17,20 @@ import {
   createPaper,
   updatePaper,
   deletePaper,
-  createProject,
-  createReminder,
-  completeReminder,
-  deleteReminder,
   deleteDocument,
   getMe,
   listNotifications,
   listFollowUps,
   listPapers,
   listProjects,
+  createProject,
   listDocuments,
-  listReminders,
   login,
   markNotificationRead,
   Notification,
   Paper,
   Project,
   register,
-  Reminder,
   ResearchDocument,
   searchPapers,
   searchLiterature,
@@ -106,11 +101,6 @@ export default function WorkspacePage() {
   const [researchIdea, setResearchIdea] =
     useState('');
 
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [reminderTitle, setReminderTitle] = useState('');
-  const [reminderDescription, setReminderDescription] = useState('');
-  const [reminderDatetime, setReminderDatetime] = useState('');
-
   const [researchAnalysis, setResearchAnalysis] =
     useState<ResearchAnalysis | null>(null);
 
@@ -166,7 +156,6 @@ export default function WorkspacePage() {
         loadedPapers,
         loadedNotifications,
         loadedFollowUps,
-        loadedReminders,
         loadedDocs,
       ] = await Promise.allSettled([
         getMe(accessToken),
@@ -174,7 +163,6 @@ export default function WorkspacePage() {
         listPapers(accessToken),
         listNotifications(accessToken),
         listFollowUps(accessToken),
-        listReminders(accessToken),
         listDocuments(accessToken, undefined, true),
       ]);
       if (loadedProfile.status === 'fulfilled') setUserProfile(loadedProfile.value);
@@ -182,9 +170,8 @@ export default function WorkspacePage() {
       if (loadedPapers.status === 'fulfilled') setPapers(loadedPapers.value);
       if (loadedNotifications.status === 'fulfilled') setNotifications(loadedNotifications.value);
       if (loadedFollowUps.status === 'fulfilled') setFollowUps(loadedFollowUps.value);
-      if (loadedReminders.status === 'fulfilled') setReminders(loadedReminders.value);
       if (loadedDocs.status === 'fulfilled') setWorkspaceDocuments(loadedDocs.value);
-      const firstFailure = [loadedProfile, loadedProjects, loadedPapers, loadedNotifications, loadedFollowUps, loadedReminders]
+      const firstFailure = [loadedProfile, loadedProjects, loadedPapers, loadedNotifications, loadedFollowUps]
         .find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (firstFailure) {
         const msg = firstFailure.reason instanceof Error ? firstFailure.reason.message : '';
@@ -454,7 +441,8 @@ export default function WorkspacePage() {
   async function handleCreateFollowUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const pidVal = form.get('project_id');
     const pid = pidVal && String(pidVal).trim() !== '' ? Number(pidVal) : undefined;
     try {
@@ -465,7 +453,7 @@ export default function WorkspacePage() {
         pid
       );
       setFollowUps((current) => [...current, followup]);
-      event.currentTarget.reset();
+      formElement?.reset();
       setFollowUpCreateProjectId('');
     } catch (followupError) {
       setError(followupError instanceof Error ? followupError.message : 'Follow-up creation failed.');
@@ -618,60 +606,6 @@ export default function WorkspacePage() {
     }
   }
 
-  async function handleCreateReminder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token) return;
-    setError('');
-    try {
-      const reminder = await createReminder(
-        token,
-        reminderTitle,
-        reminderDescription || null,
-        reminderDatetime
-      );
-      setReminders((current) => [...current, reminder]);
-      setReminderTitle('');
-      setReminderDescription('');
-      setReminderDatetime('');
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Reminder creation failed.');
-    }
-  }
-
-  async function handleCompleteReminder(reminderId: number) {
-    if (!token) return;
-    try {
-      const updated = await completeReminder(token, reminderId);
-      setReminders((current) => current.map((r) => r.id === updated.id ? updated : r));
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Failed to complete reminder.');
-    }
-  }
-
-  async function handleDeleteReminder(reminderId: number) {
-    if (!token) return;
-    try {
-      await deleteReminder(token, reminderId);
-      setReminders((current) => current.filter((r) => r.id !== reminderId));
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Failed to delete reminder.');
-    }
-  }
-
-  function formatReminderDate(dt: string) {
-    const date = new Date(dt);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    if (diffDays === 0) return `Today, ${timeStr}`;
-    if (diffDays === 1) return `Tomorrow, ${timeStr}`;
-    if (diffDays < 0) return `Overdue (${Math.abs(diffDays)} days ago)`;
-    return `${date.toLocaleDateString()} ${timeStr}`;
-  }
-
   function signOut() {
     window.localStorage.removeItem(
       'access_token'
@@ -683,7 +617,6 @@ export default function WorkspacePage() {
     setPapers([]);
     setNotifications([]);
     setFollowUps([]);
-    setReminders([]);
     setResearchAnalysis(null);
     setWorkspaceDocuments([]);
     router.replace('/login');
@@ -1676,7 +1609,15 @@ export default function WorkspacePage() {
                 </div>
 
                 <div className="research-overview" aria-label="Research overview">
-                  <div><span>Analysis</span><strong>{researchAnalysis.analysis.papers_processed}</strong><small>Sources evaluated</small></div>
+                  <div>
+                    <span>Analysis</span>
+                    <strong>
+                      {docFilterProjectId !== 'all' && docFilterProjectId !== 'workspace'
+                        ? workspaceDocuments.filter((d) => d.project_id === Number(docFilterProjectId)).length
+                        : (workspaceDocuments.length > 0 ? workspaceDocuments.length : (researchAnalysis.analysis.papers_processed || 0))}
+                    </strong>
+                    <small>Sources evaluated</small>
+                  </div>
                   <div><span>Research gaps</span><strong>{researchAnalysis.research_gaps.gaps.length}</strong><small>Gaps found</small></div>
                   <div><span>Datasets</span><strong>{researchAnalysis.datasets.recommendations.length}</strong><small>Recommendations</small></div>
                   <div><span>Models</span><strong>{researchAnalysis.plan.model_recommendations?.length || 3}</strong><small>Architectures</small></div>
@@ -1871,47 +1812,98 @@ export default function WorkspacePage() {
 
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
 
-                    {researchAnalysis.datasets.recommendations.map(
-                      (dataset, index) => (
-                        <article
-                          key={index}
-                          className="rounded-xl border border-slate-800 bg-slate-950 p-5"
-                        >
+                    {researchAnalysis.datasets.recommendations.length === 0 ? (
+                      <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-950 p-6 text-center">
+                        <p className="text-sm text-slate-400">
+                          {researchAnalysis.datasets.message || "No exact dataset matching the requested criteria could be verified."}
+                        </p>
+                      </div>
+                    ) : (
+                      researchAnalysis.datasets.recommendations.map(
+                        (dataset, index) => (
+                          <article
+                            key={`${dataset.name}-${index}`}
+                            className="rounded-xl border border-slate-800 bg-slate-950 p-5"
+                          >
 
-                          <h4 className="font-semibold">
-                            {dataset.name}
-                          </h4>
+                            <h4 className="font-semibold text-slate-100">
+                              {dataset.name}
+                            </h4>
 
-                          <p className="mt-3 text-sm leading-6 text-slate-400">
-                            {dataset.purpose}
-                          </p>
+                            <p className="mt-3 text-sm leading-6 text-slate-400">
+                              {dataset.purpose}
+                            </p>
 
-                          <p className="mt-4 text-xs text-cyan-400">
-                            Source: {dataset.source}
-                          </p>
+                            {dataset.why_matched && (
+                              <p className="mt-3 text-xs text-emerald-400/90 font-medium">
+                                Match Reason: {dataset.why_matched}
+                              </p>
+                            )}
 
-                          <p className="mt-2 text-xs text-slate-500">
-                            Use: {dataset.use}
-                          </p>
+                            <p className="mt-4 text-xs text-cyan-400">
+                              Source: {dataset.source}
+                            </p>
 
-                          {dataset.url ? (
-                            <a
-                              href={dataset.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-3 inline-block rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-cyan-400"
-                            >
-                              Open Dataset →
-                            </a>
-                          ) : (
-                            <p className="mt-3 text-xs text-slate-500">Source link unavailable</p>
-                          )}
+                            <p className="mt-2 text-xs text-slate-500">
+                              Use: {dataset.use}
+                            </p>
 
-                        </article>
+                            {dataset.url ? (
+                              <a
+                                href={dataset.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-block rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-cyan-400"
+                              >
+                                Open Dataset →
+                              </a>
+                            ) : (
+                              <p className="mt-3 text-xs text-slate-500">Source link unavailable</p>
+                            )}
+
+                          </article>
+                        )
                       )
                     )}
 
                   </div>
+
+                  {researchAnalysis.datasets.general_repositories && researchAnalysis.datasets.general_repositories.length > 0 && (
+                    <div className="mt-8 border-t border-slate-800/80 pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            General Discovery Repositories &amp; Portals
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Explore broad, public data portals if your research requires auxiliary or multi-domain datasets.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-400">
+                          External Portals
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {researchAnalysis.datasets.general_repositories.map((repo, idx) => (
+                          <div key={idx} className="rounded-xl border border-slate-800/60 bg-slate-950/60 p-4">
+                            <h5 className="font-medium text-sm text-slate-200">{repo.name}</h5>
+                            <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{repo.purpose}</p>
+                            <p className="mt-2 text-[11px] text-slate-500">Source: {repo.source}</p>
+                            {repo.url && (
+                              <a
+                                href={repo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-block text-xs font-medium text-cyan-400 hover:text-cyan-300"
+                              >
+                                Explore portal →
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* EXPERIMENTS */}
@@ -2341,174 +2333,6 @@ export default function WorkspacePage() {
                   ))
                 )}
               </div>
-            </section>
-
-            {/* REMINDERS */}
-
-            <section className="mt-10 border-t border-slate-800 pt-8">
-
-              <div className="flex items-end justify-between gap-4">
-
-                <div>
-                  <p className="text-sm" style={{ color: '#d4a44c' }}>
-                    Reminders
-                  </p>
-
-                  <h2 className="mt-1 text-2xl font-semibold">
-                    Research Reminders
-                  </h2>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    Stay on track with your research tasks and deadlines.
-                  </p>
-                </div>
-
-                <span className="text-sm text-slate-500">
-                  {reminders.filter((r) => r.status === 'pending').length} upcoming
-                </span>
-
-              </div>
-
-              <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-
-                <div className="space-y-3">
-
-                  {reminders.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-700 px-6 py-12 text-center">
-                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: 'rgba(105, 76, 197, 0.08)' }}>
-                        <span style={{ color: '#7c60d6', fontSize: '1.2rem' }}>⏰</span>
-                      </div>
-                      <p className="text-base font-semibold" style={{ color: '#1b2440' }}>
-                        No reminders yet
-                      </p>
-                      <p className="mt-1.5 text-sm text-slate-500">
-                        Keep your research organized by creating your first reminder.
-                      </p>
-                    </div>
-                  ) : (
-                    reminders.map((reminder) => {
-                      const isOverdue = reminder.status !== 'completed' && new Date(reminder.reminder_datetime) < new Date();
-                      const isDueSoon = !isOverdue && reminder.status !== 'completed' &&
-                        (new Date(reminder.reminder_datetime).getTime() - Date.now()) < 86400000;
-                      const statusClass = reminder.status === 'completed' ? 'completed' : isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : 'upcoming';
-
-                      return (
-                        <article
-                          key={reminder.id}
-                          className={`reminder-card status-${statusClass}`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="font-semibold" style={{ color: '#1b2440' }}>
-                                {reminder.title}
-                              </h3>
-
-                              {reminder.description && (
-                                <p className="mt-1.5 text-sm text-slate-400">
-                                  {reminder.description}
-                                </p>
-                              )}
-
-                              <p className="mt-2.5 text-xs text-slate-500">
-                                {reminder.status === 'completed'
-                                  ? `Completed ${new Date(reminder.updated_at).toLocaleDateString()}`
-                                  : formatReminderDate(reminder.reminder_datetime)
-                                }
-                              </p>
-                            </div>
-
-                            <span className={`reminder-status-badge shrink-0 ${statusClass}`}>
-                              {reminder.status === 'completed' ? '✓ Completed' : isOverdue ? 'Overdue' : isDueSoon ? 'Due soon' : 'Upcoming'}
-                            </span>
-                          </div>
-
-                          {reminder.status !== 'completed' && (
-                            <div className="mt-4 flex gap-2">
-                              <button
-                                onClick={() => handleCompleteReminder(reminder.id)}
-                                className="rounded-lg px-3.5 py-2 text-xs font-semibold text-white transition"
-                                style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}
-                              >
-                                Mark complete
-                              </button>
-                              <button
-                                onClick={() => handleDeleteReminder(reminder.id)}
-                                className="rounded-lg border border-slate-700 px-3.5 py-2 text-xs text-slate-300 transition hover:border-[#d66060] hover:text-[#d66060]"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-
-                        </article>
-                      );
-                    })
-                  )}
-
-                </div>
-
-                <form
-                  onSubmit={handleCreateReminder}
-                  className="h-fit rounded-xl border border-slate-800 bg-slate-900 p-5"
-                >
-
-                  <h2 className="font-semibold">
-                    Add a reminder
-                  </h2>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    Never miss a research deadline.
-                  </p>
-
-                  <div className="mt-5 space-y-3">
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Title</label>
-                      <input
-                        required
-                        minLength={1}
-                        value={reminderTitle}
-                        onChange={(event) => setReminderTitle(event.target.value)}
-                        placeholder="e.g., Review literature"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Notes</label>
-                      <textarea
-                        value={reminderDescription}
-                        onChange={(event) => setReminderDescription(event.target.value)}
-                        placeholder="Optional description"
-                        rows={3}
-                        className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Date & time</label>
-                      <input
-                        required
-                        type="datetime-local"
-                        value={reminderDatetime}
-                        onChange={(event) => setReminderDatetime(event.target.value)}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <button
-                      className="w-full rounded-lg px-4 py-3 text-sm font-semibold text-white transition"
-                      style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}
-                    >
-                      Create reminder
-                    </button>
-
-                  </div>
-
-                </form>
-
-              </div>
-
             </section>
 
             {/* NOTIFICATIONS */}

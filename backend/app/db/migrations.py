@@ -162,6 +162,29 @@ def upgrade_sqlite_schema(engine: Engine) -> None:
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_references_project_id ON project_references (project_id)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_references_owner_id ON project_references (owner_id)"))
 
+    # Add email_sent, email_sent_at, last_error to user_reminders if missing
+    if "user_reminders" in tables:
+        reminder_columns = {column["name"] for column in inspector.get_columns("user_reminders")}
+        if "email_sent" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN email_sent BOOLEAN DEFAULT 0"))
+        if "email_sent_at" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN email_sent_at DATETIME"))
+        if "last_error" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN last_error TEXT"))
+        if "timezone" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN timezone VARCHAR(64) DEFAULT 'Asia/Kolkata'"))
+        if "project_id" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN project_id INTEGER"))
+        if "attempts" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN attempts INTEGER DEFAULT 0"))
+
+
 
 def _drop_email_unique_constraint(engine: Engine, inspector) -> None:
     """Remove the UNIQUE constraint from users.email if present.

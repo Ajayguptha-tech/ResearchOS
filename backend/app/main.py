@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,7 +19,6 @@ from app.api.v1.routes import (
     papers,
     projects,
     references,
-    reminders,
     research,
     research_papers,
     supervisor,
@@ -30,45 +31,6 @@ from app.db.session import engine
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Log email configuration on startup (no secrets — NEVER log passwords)
-    env_file_path = settings.model_config.get("env_file", "(unknown)")
-    logger.warning(
-        "[Startup] Config file: %s",
-        env_file_path,
-    )
-    logger.warning(
-        "[Startup] Email provider: %s | SMTP host: %s | SMTP port: %s | "
-        "SMTP username: %s | SMTP from: %s | SMTP password set: %s",
-        settings.email_provider or "(not set)",
-        settings.smtp_host or "(not set)",
-        settings.smtp_port,
-        settings.smtp_username or "(not set)",
-        settings.smtp_from or settings.email_from,
-        "yes" if settings.smtp_password else "NO — NOT SET",
-    )
-    if settings.email_provider.strip().lower() == "smtp":
-        issues = []
-        if not settings.smtp_host or not settings.smtp_host.strip():
-            issues.append("SMTP_HOST")
-        if not settings.smtp_username or not settings.smtp_username.strip():
-            issues.append("SMTP_USERNAME")
-        if not settings.smtp_password or not settings.smtp_password.strip():
-            issues.append("SMTP_PASSWORD")
-        if not (settings.smtp_from and settings.smtp_from.strip()):
-            issues.append("SMTP_FROM (will use EMAIL_FROM as fallback)")
-        if issues:
-            logger.warning(
-                "[Startup] ⚠ EMAIL_PROVIDER=smtp but missing: %s. "
-                "OTP emails will fail. Edit backend/.env and restart.",
-                ", ".join(issues),
-            )
-        else:
-            logger.warning(
-                "[Startup] ✓ SMTP fully configured. To test, run: "
-                "python test_smtp.py youremail@example.com"
-                " or visit GET /api/v1/auth/smtp-status"
-            )
-
     # Create database tables automatically
     if settings.database_url.startswith("sqlite"):
         reset_database(engine)
@@ -76,6 +38,15 @@ async def lifespan(_: FastAPI):
         upgrade_sqlite_schema(engine)
     else:
         Base.metadata.create_all(bind=engine)
+
+    # Seed dedicated demo account idempotently
+    try:
+        from app.db.session import SessionLocal
+        from app.services.demo_service import ensure_demo_account
+        with SessionLocal() as seed_db:
+            ensure_demo_account(seed_db)
+    except Exception as exc:
+        logger.error("[Startup] Failed to ensure demo account: %s", exc)
 
     # Create required directories
     Path(settings.vector_store_path).mkdir(
@@ -183,12 +154,6 @@ app.include_router(
     communications.router,
     prefix="/api/v1/communications",
     tags=["communications"],
-)
-
-app.include_router(
-    reminders.router,
-    prefix="/api/v1/reminders",
-    tags=["reminders"],
 )
 
 app.include_router(

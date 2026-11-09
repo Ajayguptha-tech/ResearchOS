@@ -1,11 +1,23 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolve .env path relative to the backend/ directory, not CWD.
+# Resolve .env paths across all possible working copy roots:
+# 1. backend/ directory: C:\Users\AKHIL\Downloads\ResearchOS-master\ResearchOS-master\backend\.env
+# 2. project directory:  C:\Users\AKHIL\Downloads\ResearchOS-master\ResearchOS-master\.env
+# 3. workspace root:     C:\Users\AKHIL\Downloads\ResearchOS-master\.env
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-_ENV_FILE = _BACKEND_DIR / ".env"
+_PROJECT_DIR = _BACKEND_DIR.parent
+_WORKSPACE_DIR = _PROJECT_DIR.parent
+
+_ALL_CANDIDATE_DIRS = [_WORKSPACE_DIR, _PROJECT_DIR, _BACKEND_DIR]
+_EXISTING_ENV_FILES = tuple(
+    str((d / ".env").resolve()) for d in _ALL_CANDIDATE_DIRS if (d / ".env").is_file()
+)
+# If none exist yet, default to backend/.env path for reading/writing
+_DEFAULT_ENV_FILES = _EXISTING_ENV_FILES or (str((_BACKEND_DIR / ".env").resolve()),)
 
 
 class Settings(BaseSettings):
@@ -32,16 +44,19 @@ class Settings(BaseSettings):
     vector_store_path: str = "./data/vector_store"
     upload_dir: str = "./data/uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
-    email_provider: str = "console"
-    email_from: str = "researchos@localhost"
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
     voice_provider: str = "mock"
     followup_enabled: bool = True
     followup_default_days: int = 7
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if isinstance(value, str) and value.startswith("sqlite:///./data/"):
+            db_path = (_BACKEND_DIR / "data" / value[len("sqlite:///./data/"):]).resolve()
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            # Use forward slashes for SQLite URI on Windows
+            return f"sqlite:///{db_path.as_posix()}"
+        return value
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -60,7 +75,11 @@ class Settings(BaseSettings):
                 return True
         return value
 
-    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=_DEFAULT_ENV_FILES,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache

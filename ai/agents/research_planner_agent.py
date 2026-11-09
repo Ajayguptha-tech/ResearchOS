@@ -32,7 +32,8 @@ class ResearchPlannerAgent:
             methodology_recommendations = [
                 {"stage": "Data Preprocessing & Augmentation", "details": "Color jitter, random rotation, affine transformations, and background illumination normalization to simulate real-world farm conditions."},
                 {"stage": "Transfer Learning & Class Balancing", "details": "Progressive unfreezing of backbone layers combined with class-balanced focal loss to address rare pathogen classes."},
-                {"stage": "Interpretability & Field Validation", "details": "Grad-CAM/saliency map generation to verify predictions ground on actual foliar lesions, followed by cross-species field validation."}
+                {"stage": "Interpretability & Field Validation", "details": "Grad-CAM/saliency map generation to verify predictions ground on actual foliar lesions, followed by cross-species field validation."},
+                {"stage": "Deployment & Edge Optimization", "details": "Model quantization, ONNX conversion, and offline mobile runtime benchmarking."}
             ]
             expected_challenges = [
                 "Severe class imbalance between widespread pathologies and rare, localized crop diseases.",
@@ -71,7 +72,8 @@ class ResearchPlannerAgent:
             methodology_recommendations = [
                 {"stage": "Image Preprocessing & Augmentation", "details": "Geometric normalization, photometric augmentations, and cutmix/mixup regularizations."},
                 {"stage": "Supervised & Semi-supervised Training", "details": "Multi-stage transfer learning with cosine annealing learning rate schedules."},
-                {"stage": "Benchmark Evaluation & Saliency Analysis", "details": "Precision-recall curves, mAP evaluation, and feature attribution inspection."}
+                {"stage": "Benchmark Evaluation & Saliency Analysis", "details": "Precision-recall curves, mAP evaluation, and feature attribution inspection."},
+                {"stage": "Deployment & Latency Benchmarking", "details": "Model quantization, ONNX export, and real-time inference throughput benchmarking."}
             ]
             expected_challenges = [
                 "High computational cost during high-resolution feature extraction.",
@@ -106,7 +108,8 @@ class ResearchPlannerAgent:
             methodology_recommendations = [
                 {"stage": "Text Preprocessing & Tokenization", "details": "Subword tokenization, sequence truncation, and domain vocabulary alignment."},
                 {"stage": "Parameter-Efficient Fine-Tuning", "details": "Low-Rank Adaptation (LoRA) and prompt tuning on curated domain datasets."},
-                {"stage": "Evaluation & Grounding Audit", "details": "BLEU/ROUGE/F1 metrics paired with automated factual consistency verification."}
+                {"stage": "Evaluation & Grounding Audit", "details": "BLEU/ROUGE/F1 metrics paired with automated factual consistency verification."},
+                {"stage": "Safety Alignment & Serving Optimization", "details": "Factual consistency auditing, prompt injection mitigation, and low-latency inference serving."}
             ]
             expected_challenges = [
                 "Context length constraints and memory quadratic scaling with sequence length.",
@@ -141,7 +144,8 @@ class ResearchPlannerAgent:
             methodology_recommendations = [
                 {"stage": "Problem Scoping & Data Synthesis", "details": "Formal specification of operational constraints, target metrics, and data curation."},
                 {"stage": "Iterative Modeling & Optimization", "details": "Systematic hyperparameter tuning, cross-validation, and ablation studies."},
-                {"stage": "Statistical Verification & Stress Testing", "details": "Significance testing, edge-case failure mode analysis, and reproducibility validation."}
+                {"stage": "Statistical Verification & Stress Testing", "details": "Significance testing, edge-case failure mode analysis, and reproducibility validation."},
+                {"stage": "Reproducibility Synthesis & System Integration", "details": "Open-source benchmark suite synthesis, artifact packaging, and ablation audit."}
             ]
             expected_challenges = [
                 "Balancing computational complexity with model expressiveness.",
@@ -153,9 +157,15 @@ class ResearchPlannerAgent:
                 "Exploring semi-autonomous adaptive parameter tuning."
             ]
 
+        steps = [
+            {"step": i + 1, "phase": m.get("stage", f"Phase {i+1}"), "description": m.get("details", "")}
+            for i, m in enumerate(methodology_recommendations)
+        ]
+
         return {
             "idea": idea_clean,
             "objectives": objectives,
+            "steps": steps,
             "status": "ready",
             "problem_understanding": problem_understanding,
             "research_questions": research_questions,

@@ -1,8 +1,7 @@
-"""Authentication routes.
+"""Standard Authentication Routes for ResearchOS.
 
-Registration creates the user immediately (no email OTP verification).
-Login authenticates by email + password, trying all accounts that share
-the same email.  Duplicate emails are intentionally supported.
+Features clean registration, direct login, and secure token validation.
+Email verification, OTP, and password reset workflows have been removed.
 """
 
 import logging
@@ -10,7 +9,6 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -23,34 +21,17 @@ from app.core.security import (
 )
 from app.db.models import User
 from app.schemas.auth import (
-    ForgotPasswordRequest,
+    LoginRequest,
     MessageResponse,
-    OtpSentResponse,
-    ResetPasswordRequest,
-    ResendOtpRequest,
+    RegisterRequest,
+    RegistrationResponse,
     TokenResponse,
-    VerifyEmailRequest,
-    VerifyResetOtpRequest,
-)
-from app.services.email_service import (
-    password_reset_email_body,
-    password_reset_email_html,
-    send_email,
-    verification_email_body,
-    verification_email_html,
-)
-from app.services.otp_service import (
-    can_resend_password_reset,
-    create_password_reset_token,
-    verify_password_reset_token,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Optional bearer auth — used to identify the specific user when multiple
-# accounts share the same email address.
 _optional_auth = HTTPBearer(auto_error=False)
 
 
@@ -73,47 +54,18 @@ def _extract_user_id_from_token(credentials: HTTPAuthorizationCredentials | None
 
 
 # ---------------------------------------------------------
-# REGISTER
-# ---------------------------------------------------------
-
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(
-        min_length=8,
-        max_length=128,
-    )
-    name: str = Field(
-        min_length=2,
-        max_length=100,
-    )
-
-
-# ---------------------------------------------------------
-# LOGIN
-# ---------------------------------------------------------
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(
-        min_length=1,
-        max_length=128,
-    )
-
-
-# ---------------------------------------------------------
-# REGISTER USER — no OTP, no email verification required
+# REGISTER USER — Direct Account Creation (No OTP / Verification)
 # ---------------------------------------------------------
 
 @router.post(
     "/register",
-    response_model=TokenResponse,
+    response_model=RegistrationResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def register(
     payload: RegisterRequest,
     db: Session = Depends(get_db),
-) -> TokenResponse:
-
+) -> RegistrationResponse:
     email = str(payload.email).strip().lower()
     name = payload.name.strip()
 
@@ -129,29 +81,46 @@ def register(
             detail="Name is required.",
         )
 
-    # Create user — email_verified is True by default (no OTP required)
+    if payload.confirm_password is not None and payload.password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match.",
+        )
+
+    # Check duplicate email addresses
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists. Please sign in.",
+        )
+
+    # Create user directly with email_verified=True
     user = User(
         email=email,
         name=name,
         password_hash=hash_password(payload.password),
         email_verified=True,
     )
-
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    # Log the user in immediately
+    logger.info("[Auth] New user registered directly: %s (id: %d)", email, user.id)
+
     token = create_access_token(subject=str(user.id))
 
-    return TokenResponse(
+    return RegistrationResponse(
+        message="Account created successfully.",
+        email=email,
         access_token=token,
         token_type="bearer",
+        user_id=user.id,
     )
 
 
 # ---------------------------------------------------------
-# LOGIN USER — supports multiple accounts per email
+# LOGIN USER — Direct Authentication
 # ---------------------------------------------------------
 
 @router.post(
@@ -162,10 +131,8 @@ def login(
     payload: LoginRequest,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
-
     email = str(payload.email).strip().lower()
 
-    # Find ALL users with this email (supports duplicate emails)
     users = db.query(User).filter(User.email == email).all()
 
     if not users:
@@ -174,7 +141,6 @@ def login(
             detail="Invalid email or password.",
         )
 
-    # Try each account's password
     matched_user = None
     for user in users:
         if verify_password(payload.password, user.password_hash):
@@ -187,29 +153,34 @@ def login(
             detail="Invalid email or password.",
         )
 
+    # Allow direct login without email_verified gating
     token = create_access_token(subject=str(matched_user.id))
+
+    logger.info("[Auth] User logged in: %s (id: %d)", email, matched_user.id)
 
     return TokenResponse(
         access_token=token,
         token_type="bearer",
+        user_id=matched_user.id,
+        email=matched_user.email,
+        name=matched_user.name,
+        message="Login successful.",
     )
 
 
 # ---------------------------------------------------------
-# CURRENT USER
+# CURRENT USER PROFILE
 # ---------------------------------------------------------
 
 @router.get("/me")
 def me(
-    user_id: int = Depends(get_current_user),
+    current_user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict[str, str | int | bool]:
-
-    user = db.query(User).filter(User.id == user_id).first()
-
+):
+    user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
 
@@ -218,188 +189,7 @@ def me(
         "email": user.email,
         "name": user.name,
         "role": user.role,
-        "email_verified": user.email_verified,
+        "email_verified": True,
+        "phone_number": getattr(user, "phone_number", None),
+        "created_at": user.created_at,
     }
-
-
-# ---------------------------------------------------------
-# VERIFY EMAIL — kept as a no-op for backwards compatibility
-# ---------------------------------------------------------
-
-# ---------------------------------------------------------
-# SMTP STATUS — truthful diagnostic (never exposes the password)
-# ---------------------------------------------------------
-
-@router.get("/smtp-status")
-def smtp_status() -> dict:
-    """Return SMTP connectivity/authentication status for the configured provider.
-
-    This runs a real connect + authenticate probe (no email is sent).
-    The response never includes the SMTP password.
-    """
-    from app.services.email_service import test_smtp_connection
-
-    return test_smtp_connection()
-
-
-@router.post(
-    "/verify-email",
-    response_model=MessageResponse,
-)
-def verify_email(
-    payload: VerifyEmailRequest,
-    db: Session = Depends(get_db),
-) -> MessageResponse:
-    """No-op. Email verification is not required."""
-    return MessageResponse(message="Email verification is not required.")
-
-
-# ---------------------------------------------------------
-# RESEND OTP — kept as a no-op for backwards compatibility
-# ---------------------------------------------------------
-
-@router.post(
-    "/resend-otp",
-    response_model=OtpSentResponse,
-)
-def resend_otp(
-    payload: ResendOtpRequest,
-    db: Session = Depends(get_db),
-) -> OtpSentResponse:
-    """No-op. Email verification is not required."""
-    return OtpSentResponse(message="Email verification is not required.")
-
-
-# ---------------------------------------------------------
-# FORGOT PASSWORD
-# ---------------------------------------------------------
-
-@router.post(
-    "/forgot-password",
-    response_model=MessageResponse,
-)
-def forgot_password(
-    payload: ForgotPasswordRequest,
-    db: Session = Depends(get_db),
-) -> MessageResponse:
-    email = str(payload.email).strip().lower()
-
-    # Find ALL users with this email (duplicate email support)
-    users = db.query(User).filter(User.email == email).all()
-
-    if not users:
-        return MessageResponse(message="If an account exists with this email, a reset code has been sent.")
-
-    # Send reset OTP to each account that isn't in cooldown
-    for user in users:
-        can_resend, cooldown_msg = can_resend_password_reset(db, user.id)
-        if not can_resend:
-            logger.info("[ForgotPassword] User %d (%s) in cooldown, skipping", user.id, email)
-            continue
-
-        otp = create_password_reset_token(db, user.id)
-        email_result = send_email(
-            email,
-            "ResearchOS - Password Reset Code",
-            password_reset_email_body(otp),
-            html=password_reset_email_html(otp),
-        )
-
-        logger.info(
-            "[ForgotPassword] Email delivery status for user %d (%s): %s",
-            user.id, email, email_result.get("status"),
-        )
-
-    return MessageResponse(message="If an account exists with this email, a reset code has been sent.")
-
-
-# ---------------------------------------------------------
-# VERIFY RESET OTP
-# ---------------------------------------------------------
-
-@router.post(
-    "/verify-reset-otp",
-    response_model=MessageResponse,
-)
-def verify_reset_otp(
-    payload: VerifyResetOtpRequest,
-    db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_auth),
-) -> MessageResponse:
-    email = str(payload.email).strip().lower()
-
-    # Try to identify the specific user from the access token
-    user = None
-    user_id = _extract_user_id_from_token(credentials)
-    if user_id is not None:
-        user = db.query(User).filter(User.id == user_id).first()
-
-    if user:
-        success, message = verify_password_reset_token(
-            db, user.id, payload.otp, mark_used=False, increment_attempts=False,
-        )
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=message,
-            )
-        return MessageResponse(message=message)
-
-    # Fallback: try all users with this email
-    users = db.query(User).filter(User.email == email).all()
-    for u in users:
-        success, message = verify_password_reset_token(
-            db, u.id, payload.otp, mark_used=False, increment_attempts=False,
-        )
-        if success:
-            return MessageResponse(message=message)
-
-    return MessageResponse(message="If an account exists with this email, a reset code was sent.")
-
-
-# ---------------------------------------------------------
-# RESET PASSWORD
-# ---------------------------------------------------------
-
-@router.post(
-    "/reset-password",
-    response_model=MessageResponse,
-)
-def reset_password(
-    payload: ResetPasswordRequest,
-    db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_auth),
-) -> MessageResponse:
-    email = str(payload.email).strip().lower()
-
-    # Try to identify the specific user from the access token
-    user = None
-    user_id = _extract_user_id_from_token(credentials)
-    if user_id is not None:
-        user = db.query(User).filter(User.id == user_id).first()
-
-    if user:
-        success, message = verify_password_reset_token(
-            db, user.id, payload.otp, mark_used=True,
-        )
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=message,
-            )
-        user.password_hash = hash_password(payload.new_password)
-        db.commit()
-        return MessageResponse(message="Password has been reset successfully. Please sign in.")
-
-    # Fallback: try all users with this email
-    users = db.query(User).filter(User.email == email).all()
-    for u in users:
-        success, message = verify_password_reset_token(
-            db, u.id, payload.otp, mark_used=True,
-        )
-        if success:
-            u.password_hash = hash_password(payload.new_password)
-            db.commit()
-            return MessageResponse(message="Password has been reset successfully. Please sign in.")
-
-    return MessageResponse(message="If an account exists with this email, the password has been reset.")

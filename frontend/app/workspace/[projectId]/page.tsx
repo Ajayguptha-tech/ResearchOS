@@ -24,11 +24,6 @@ import {
   Project,
   ResearchPaper,
   ResearchDocument,
-  Reminder,
-  listReminders,
-  createReminder,
-  completeReminder,
-  deleteReminder,
   login,
   register,
   listEvidenceSessions,
@@ -47,7 +42,7 @@ import {
   PaperDraft,
 } from '../../../lib/api';
 
-type Section = 'overview' | 'documents' | 'editor' | 'analysis' | 'references' | 'evidence' | 'reminders' | 'writing';
+type Section = 'overview' | 'documents' | 'editor' | 'analysis' | 'references' | 'evidence' | 'writing';
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: '◈' },
@@ -57,7 +52,6 @@ const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: 'analysis', label: 'AI Analysis', icon: '✦' },
   { key: 'references', label: 'References', icon: '📚' },
   { key: 'evidence', label: 'Evidence Sessions', icon: '🔍' },
-  { key: 'reminders', label: 'Reminders', icon: '⏰' },
 ];
 
 export default function ProjectWorkspacePage() {
@@ -119,11 +113,6 @@ export default function ProjectWorkspacePage() {
   const [refYear, setRefYear] = useState('');
   const [refNotes, setRefNotes] = useState('');
 
-  // Reminders
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [reminderTitle, setReminderTitle] = useState('');
-  const [reminderDesc, setReminderDesc] = useState('');
-  const [reminderDatetime, setReminderDatetime] = useState('');
 
   // Evidence Sessions
   const [evidenceSessions, setEvidenceSessions] = useState<EvidenceSession[]>([]);
@@ -194,7 +183,6 @@ export default function ProjectWorkspacePage() {
           await Promise.allSettled([
             loadDocuments(accessToken, projectId),
             loadPaper(accessToken, projectId),
-            loadReminders(accessToken),
             loadReferences(accessToken, projectId),
             loadEvidenceSessions(accessToken, projectId),
             loadDrafts(accessToken, projectId),
@@ -229,13 +217,7 @@ export default function ProjectWorkspacePage() {
     } catch {}
   }
 
-  async function loadReminders(accessToken: string) {
-    try {
-      const r = await listReminders(accessToken);
-      setReminders(r);
-    } catch {}
-  }
-
+  
 
   async function loadReferences(accessToken: string, pid: number) {
     try {
@@ -490,11 +472,19 @@ export default function ProjectWorkspacePage() {
     loadData(saved);
   }, [projectId]);
 
+  function signOut() {
+    localStorage.removeItem('access_token');
+    setToken(null);
+    setUserProfile(null);
+    router.push('/login');
+  }
+
   // === DOCUMENT UPLOAD ===
   async function handleUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!token) return;
-    const file = new FormData(e.currentTarget).get('document');
+    const formElement = e.currentTarget;
+    const file = new FormData(formElement).get('document');
     if (!(file instanceof File) || file.size === 0) return;
     setUploadStatus('');
     setUploading(true);
@@ -503,7 +493,7 @@ export default function ProjectWorkspacePage() {
       const doc = await uploadResearchDocument(token, file, undefined, projectId);
       setDocuments((prev) => [doc, ...prev]);
       setUploadStatus(`Uploaded ${doc.filename} — ${doc.extracted_characters.toLocaleString()} characters extracted`);
-      e.currentTarget.reset();
+      formElement?.reset();
     } catch (err) {
       setUploadStatus('');
       setError(err instanceof Error ? err.message : 'Upload failed.');
@@ -557,59 +547,7 @@ export default function ProjectWorkspacePage() {
     }
   }
 
-  // === REMINDERS ===
-  async function handleCreateReminder(e: FormEvent) {
-    e.preventDefault();
-    if (!token) return;
-    try {
-      const r = await createReminder(token, reminderTitle, reminderDesc || null, reminderDatetime);
-      setReminders((prev) => [...prev, r]);
-      setReminderTitle('');
-      setReminderDesc('');
-      setReminderDatetime('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create reminder.');
-    }
-  }
 
-  async function handleCompleteReminder(id: number) {
-    if (!token) return;
-    try {
-      const updated = await completeReminder(token, id);
-      setReminders((prev) => prev.map((r) => r.id === updated.id ? updated : r));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.');
-    }
-  }
-
-  async function handleDeleteReminder(id: number) {
-    if (!token) return;
-    try {
-      await deleteReminder(token, id);
-      setReminders((prev) => prev.filter((r) => r.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.');
-    }
-  }
-
-  function signOut() {
-    localStorage.removeItem('access_token');
-    setToken(null);
-    setUserProfile(null);
-    router.push('/login');
-  }
-
-  function formatReminderDate(dt: string) {
-    const date = new Date(dt);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (diffDays === 0) return `Today, ${timeStr}`;
-    if (diffDays === 1) return `Tomorrow, ${timeStr}`;
-    if (diffDays < 0) return `Overdue (${Math.abs(diffDays)} days ago)`;
-    return `${date.toLocaleDateString()} ${timeStr}`;
-  }
 
   const wordCount = paperContent.trim() ? paperContent.trim().split(/\s+/).length : 0;
 
@@ -693,9 +631,9 @@ export default function ProjectWorkspacePage() {
                     <h2 className="text-xl font-semibold" style={{ color: '#1b2440' }}>Project Overview</h2>
                     <button onClick={handleDeleteProject} className="rounded-lg border border-[#e7e2fa] px-3 py-1.5 text-xs font-medium transition hover:border-[#d66060] hover:text-[#d66060]" style={{ color: '#8790a4' }}>Delete Project</button>
                   </div>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
-                      <p className="text-xs font-medium text-slate-400">Documents</p>
+                      <p className="text-xs font-medium text-slate-400">Sources Evaluated</p>
                       <p className="mt-1 text-2xl font-bold" style={{ color: '#6549c8' }}>{documents.length}</p>
                     </div>
                     <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
@@ -709,10 +647,6 @@ export default function ProjectWorkspacePage() {
                     <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
                       <p className="text-xs font-medium text-slate-400">Paper Words</p>
                       <p className="mt-1 text-2xl font-bold" style={{ color: '#6549c8' }}>{paper?.word_count || 0}</p>
-                    </div>
-                    <div className="rounded-xl border border-[#e7e2fa] bg-[#fdfcff] p-4">
-                      <p className="text-xs font-medium text-slate-400">Reminders</p>
-                      <p className="mt-1 text-2xl font-bold" style={{ color: '#6549c8' }}>{reminders.filter((r) => r.status === 'pending').length}</p>
                     </div>
                   </div>
                 </div>
@@ -1269,6 +1203,11 @@ export default function ProjectWorkspacePage() {
                                 )}
                               </div>
 
+                              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900 flex items-center gap-2">
+                                <span className="font-bold text-amber-800">AI-Generated Research Paper Draft / Reference</span>
+                                <span className="text-amber-700">— This document is an AI-generated draft intended for research scoping, reference, and synthesis. It is NOT an already published or peer-reviewed academic paper.</span>
+                              </div>
+
                               <textarea
                                 value={activeDraft.content}
                                 onChange={(e) => setActiveDraft({ ...activeDraft, content: e.target.value })}
@@ -1298,75 +1237,6 @@ export default function ProjectWorkspacePage() {
                       ))}
                     </div>
                   )}
-                </div>
-              </section>
-            )}
-
-            {/* === REMINDERS === */}
-            {activeSection === 'reminders' && (
-              <section className="space-y-6">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold" style={{ color: '#1b2440' }}>Research Reminders</h2>
-                    <p className="mt-1 text-sm" style={{ color: '#68728a' }}>Stay on track with your research tasks and deadlines.</p>
-                  </div>
-                  <span className="text-sm text-slate-500">{reminders.filter((r) => r.status === 'pending').length} upcoming</span>
-                </div>
-
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="space-y-3">
-                    {reminders.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e0d9f4] bg-white p-8 text-center">
-                        <p className="text-sm font-semibold" style={{ color: '#1b2440' }}>No reminders yet</p>
-                        <p className="mt-1 text-xs" style={{ color: '#8790a4' }}>Create your first reminder to stay organized.</p>
-                      </div>
-                    ) : reminders.map((r) => {
-                      const isOverdue = r.status !== 'completed' && new Date(r.reminder_datetime) < new Date();
-                      const isDueSoon = !isOverdue && r.status !== 'completed' && (new Date(r.reminder_datetime).getTime() - Date.now()) < 86400000;
-                      const sc = r.status === 'completed' ? 'completed' : isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : 'upcoming';
-                      return (
-                        <article key={r.id} className={`reminder-card status-${sc}`}>
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="font-semibold" style={{ color: '#1b2440' }}>{r.title}</h3>
-                              {r.description && <p className="mt-1 text-sm text-slate-400">{r.description}</p>}
-                              <p className="mt-2 text-xs text-slate-500">
-                                {r.status === 'completed' ? `Completed ${new Date(r.updated_at).toLocaleDateString()}` : formatReminderDate(r.reminder_datetime)}
-                              </p>
-                            </div>
-                            <span className={`reminder-status-badge shrink-0 ${sc}`}>
-                              {r.status === 'completed' ? '✓ Completed' : isOverdue ? 'Overdue' : isDueSoon ? 'Due soon' : 'Upcoming'}
-                            </span>
-                          </div>
-                          {r.status !== 'completed' && (
-                            <div className="mt-3 flex gap-2">
-                              <button onClick={() => handleCompleteReminder(r.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white" style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}>Mark complete</button>
-                              <button onClick={() => handleDeleteReminder(r.id)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:text-[#d66060]">Delete</button>
-                            </div>
-                          )}
-                        </article>
-                      );
-                    })}
-                  </div>
-
-                  <form onSubmit={handleCreateReminder} className="h-fit rounded-xl border border-[#e7e2fa] bg-white p-5" style={{ boxShadow: '0 10px 28px rgba(62, 42, 132, 0.055)' }}>
-                    <h3 className="font-semibold" style={{ color: '#1b2440' }}>Add a reminder</h3>
-                    <div className="mt-4 space-y-3">
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Title</label>
-                        <input required value={reminderTitle} onChange={(e) => setReminderTitle(e.target.value)} placeholder="e.g., Review literature" className="w-full rounded-lg border border-[#e0d9f4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7c60d6]" style={{ color: '#1d2742' }} />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Notes</label>
-                        <textarea value={reminderDesc} onChange={(e) => setReminderDesc(e.target.value)} placeholder="Optional" rows={2} className="w-full resize-none rounded-lg border border-[#e0d9f4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7c60d6]" style={{ color: '#1d2742' }} />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Date & time</label>
-                        <input required type="datetime-local" value={reminderDatetime} onChange={(e) => setReminderDatetime(e.target.value)} className="w-full rounded-lg border border-[#e0d9f4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7c60d6]" style={{ color: '#1d2742' }} />
-                      </div>
-                      <button className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}>Create reminder</button>
-                    </div>
-                  </form>
                 </div>
               </section>
             )}
