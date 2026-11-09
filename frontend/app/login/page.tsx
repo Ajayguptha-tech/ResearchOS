@@ -98,34 +98,10 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Forgot Password */}
-              <div className="text-right">
-                <Link
-                  href="/forgot-password"
-                  className="text-sm font-medium transition"
-                  style={{ color: '#664bc5' }}
-                >
-                  Forgot password?
-                </Link>
-              </div>
-
               {/* Error */}
               {error && (
                 <div className="rounded-xl border border-[rgba(180,76,76,0.25)] bg-[rgba(180,76,76,0.06)] px-4 py-3 text-sm" style={{ color: '#b44c4c' }}>
                   <p>{error}</p>
-                  {error.toLowerCase().includes("verify your email") && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        localStorage.setItem("verify_email", email.trim().toLowerCase());
-                        router.push("/verify-email");
-                      }}
-                      className="mt-2 text-xs font-semibold underline"
-                      style={{ color: "#6247bf" }}
-                    >
-                      Enter verification code →
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -144,17 +120,24 @@ export default function LoginPage() {
                 ) : "Sign in"}
               </button>
 
-              {/* Demo Credentials Quick Fill */}
-              <div className="pt-1">
+              {/* Dedicated Demo Credentials Section */}
+              <div className="rounded-xl border border-[#e0d9f4] bg-[#faf8ff] p-3 text-center">
+                <div className="flex items-center justify-between text-xs font-semibold text-[#6247bf]">
+                  <span>⚡ Demo Account</span>
+                  <span className="font-normal text-slate-500">Read-only sandbox</span>
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  <span className="font-mono text-[11px] text-[#4f36a5]">demo@researchos.io</span> · <span className="font-mono text-[11px] text-[#4f36a5]">DemoPassword123!</span>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
                     setEmail("demo@researchos.io");
                     setPassword("DemoPassword123!");
                   }}
-                  className="w-full rounded-xl border border-[#e0d9f4] bg-[#faf8ff] px-4 py-2.5 text-xs font-semibold text-[#6247bf] transition hover:bg-[#f0ebff]"
+                  className="mt-2.5 w-full rounded-lg bg-[#ede6fd] px-3 py-1.5 text-xs font-semibold text-[#6247bf] transition hover:bg-[#e4dafc]"
                 >
-                  ⚡ Quick Fill Demo Account (demo@researchos.io)
+                  Quick Fill Demo Credentials
                 </button>
               </div>
 

@@ -1,5 +1,8 @@
+import os
 import sys
 from pathlib import Path
+
+os.environ["TESTING"] = "1"
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_ROOT.parent

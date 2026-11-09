@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.db.models import User
 from app.main import app
 from conftest import TestingSessionLocal
 client = TestClient(app)
@@ -11,6 +12,11 @@ def register(email: str) -> str:
         json={"email": email, "password": "strong-password", "name": email.split("@")[0]},
     )
     assert response.status_code in {200, 201}
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.email_verified = True
+            db.commit()
     return response.json()["access_token"]
 
 

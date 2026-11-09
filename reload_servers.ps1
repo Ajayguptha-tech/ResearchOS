@@ -19,7 +19,7 @@ foreach ($p in $ports) {
 
 Start-Sleep -Seconds 2
 
-$rootDir = "C:\Users\lenovo\Desktop\master\ResearchOS"
+$rootDir = if ($PSScriptRoot) { $PSScriptRoot } else { "C:\Users\AKHIL\Downloads\ResearchOS-master\ResearchOS-master" }
 $backendDir = "$rootDir\backend"
 $frontendDir = "$rootDir\frontend"
 $logsDir = "$rootDir\.freebuff"
@@ -35,7 +35,8 @@ $frontendErrLog = "$logsDir\preview.log.err"
 
 $pythonExe = "$backendDir\.venv\Scripts\python.exe"
 if (-not (Test-Path $pythonExe)) {
-    $pythonExe = "python.exe"
+    $pythonCmd = Get-Command python.exe -ErrorAction SilentlyContinue
+    $pythonExe = if ($pythonCmd) { $pythonCmd.Source } else { "C:\Users\AKHIL\AppData\Local\Programs\Python\Python312\python.exe" }
 }
 
 Write-Host "Starting Backend with $pythonExe on port 8000..."

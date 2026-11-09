@@ -16,6 +16,7 @@ export type UserProfile = {
 export type Reminder = {
   id: number;
   user_id: number;
+  project_id?: number | null;
   title: string;
   description: string | null;
   reminder_datetime: string;
@@ -23,6 +24,7 @@ export type Reminder = {
   status: string;
   email_sent?: boolean;
   email_sent_at?: string | null;
+  attempts?: number;
   last_error?: string | null;
   created_at: string;
   updated_at: string;
@@ -383,147 +385,6 @@ export function getMe(token: string) {
   return request<UserProfile>(
     '/api/v1/auth/me',
     {},
-    token
-  );
-}
-
-// ---------------------------------------------------------
-// EMAIL VERIFICATION & PASSWORD RESET
-// ---------------------------------------------------------
-
-export function verifyEmail(email: string, otp: string, token?: string) {
-  return request<{ message: string; access_token?: string; token_type?: string; email_status?: string; email_detail?: string }>(
-    '/api/v1/auth/verify-email',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email, otp }),
-      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-    }
-  );
-}
-
-export function resendOtp(email: string, token?: string) {
-  return request<{ message: string; expires_in_seconds: number; email_status?: string; email_detail?: string }>(
-    '/api/v1/auth/resend-otp',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-    }
-  );
-}
-
-export function forgotPassword(email: string) {
-  return request<{ message: string }>(
-    '/api/v1/auth/forgot-password',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    }
-  );
-}
-
-export function verifyResetOtp(email: string, otp: string) {
-  return request<{ message: string }>(
-    '/api/v1/auth/verify-reset-otp',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email, otp }),
-    }
-  );
-}
-
-export function resetPassword(email: string, otp: string, newPassword: string) {
-  return request<{ message: string }>(
-    '/api/v1/auth/reset-password',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email, otp, new_password: newPassword }),
-    }
-  );
-}
-
-// ---------------------------------------------------------
-// REMINDERS
-// ---------------------------------------------------------
-
-export function listReminders(token: string) {
-  return request<Reminder[]>('/api/v1/reminders', {}, token);
-}
-
-export function createReminder(
-  token: string,
-  title: string,
-  description: string | null,
-  reminderDatetime: string,
-  timezone?: string
-) {
-  return request<Reminder>(
-    '/api/v1/reminders',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        description,
-        reminder_datetime: reminderDatetime,
-        timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
-      }),
-    },
-    token
-  );
-}
-
-export function updateReminder(
-  token: string,
-  reminderId: number,
-  data: { title?: string; description?: string | null; reminder_datetime?: string; timezone?: string; status?: string }
-) {
-  return request<Reminder>(
-    `/api/v1/reminders/${reminderId}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    },
-    token
-  );
-}
-
-export function cancelReminder(token: string, reminderId: number) {
-  return request<Reminder>(
-    `/api/v1/reminders/${reminderId}/cancel`,
-    { method: 'POST' },
-    token
-  );
-}
-
-export function completeReminder(token: string, reminderId: number) {
-  return request<Reminder>(
-    `/api/v1/reminders/${reminderId}/complete`,
-    { method: 'POST' },
-    token
-  );
-}
-
-export function deleteReminder(token: string, reminderId: number) {
-  return request<void>(
-    `/api/v1/reminders/${reminderId}`,
-    { method: 'DELETE' },
-    token
-  );
-}
-
-export function sendReminderNow(token: string, reminderId: number) {
-  return request<Reminder>(
-    `/api/v1/reminders/${reminderId}/send-now`,
-    { method: 'POST' },
-    token
-  );
-}
-
-export function checkDueReminders(token: string) {
-  return request<{ processed: number }>(
-    '/api/v1/reminders/check-due',
-    { method: 'POST' },
     token
   );
 }

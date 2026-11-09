@@ -50,17 +50,12 @@ export default function RegisterPage() {
 
     try {
       const result = await register(email, password, name);
-      localStorage.setItem("verify_email", email.trim().toLowerCase());
       if (result.access_token) {
-        localStorage.setItem("verify_token", result.access_token);
+        localStorage.setItem("access_token", result.access_token);
+        router.push("/dashboard");
+      } else {
+        router.push("/login");
       }
-      if (result.email_status) {
-        localStorage.setItem("email_status", result.email_status);
-      }
-      if (result.email_detail) {
-        localStorage.setItem("email_detail", result.email_detail);
-      }
-      router.push("/verify-email");
     } catch (err) {
       setError(
         err instanceof Error

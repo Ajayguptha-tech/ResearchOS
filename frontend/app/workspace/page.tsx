@@ -17,11 +17,6 @@ import {
   createPaper,
   updatePaper,
   deletePaper,
-  createReminder,
-  cancelReminder,
-  updateReminder,
-  completeReminder,
-  deleteReminder,
   deleteDocument,
   getMe,
   listNotifications,
@@ -30,14 +25,12 @@ import {
   listProjects,
   createProject,
   listDocuments,
-  listReminders,
   login,
   markNotificationRead,
   Notification,
   Paper,
   Project,
   register,
-  Reminder,
   ResearchDocument,
   searchPapers,
   searchLiterature,
@@ -108,12 +101,6 @@ export default function WorkspacePage() {
   const [researchIdea, setResearchIdea] =
     useState('');
 
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [reminderTitle, setReminderTitle] = useState('');
-  const [reminderDescription, setReminderDescription] = useState('');
-  const [reminderDatetime, setReminderDatetime] = useState('');
-  const [reminderTimezone, setReminderTimezone] = useState('Asia/Kolkata');
-
   const [researchAnalysis, setResearchAnalysis] =
     useState<ResearchAnalysis | null>(null);
 
@@ -169,7 +156,6 @@ export default function WorkspacePage() {
         loadedPapers,
         loadedNotifications,
         loadedFollowUps,
-        loadedReminders,
         loadedDocs,
       ] = await Promise.allSettled([
         getMe(accessToken),
@@ -177,7 +163,6 @@ export default function WorkspacePage() {
         listPapers(accessToken),
         listNotifications(accessToken),
         listFollowUps(accessToken),
-        listReminders(accessToken),
         listDocuments(accessToken, undefined, true),
       ]);
       if (loadedProfile.status === 'fulfilled') setUserProfile(loadedProfile.value);
@@ -185,9 +170,8 @@ export default function WorkspacePage() {
       if (loadedPapers.status === 'fulfilled') setPapers(loadedPapers.value);
       if (loadedNotifications.status === 'fulfilled') setNotifications(loadedNotifications.value);
       if (loadedFollowUps.status === 'fulfilled') setFollowUps(loadedFollowUps.value);
-      if (loadedReminders.status === 'fulfilled') setReminders(loadedReminders.value);
       if (loadedDocs.status === 'fulfilled') setWorkspaceDocuments(loadedDocs.value);
-      const firstFailure = [loadedProfile, loadedProjects, loadedPapers, loadedNotifications, loadedFollowUps, loadedReminders]
+      const firstFailure = [loadedProfile, loadedProjects, loadedPapers, loadedNotifications, loadedFollowUps]
         .find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (firstFailure) {
         const msg = firstFailure.reason instanceof Error ? firstFailure.reason.message : '';
@@ -226,19 +210,6 @@ export default function WorkspacePage() {
     setIsAuthChecking(false);
     loadWorkspaceData(savedToken);
   }, [router]);
-
-  useEffect(() => {
-    if (!token) return;
-    const interval = setInterval(async () => {
-      try {
-        const fresh = await listReminders(token);
-        setReminders(fresh);
-      } catch {
-        // silent background poll failure
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [token]);
 
   async function handleAuth(
     event: FormEvent<HTMLFormElement>
@@ -635,106 +606,6 @@ export default function WorkspacePage() {
     }
   }
 
-  async function handleCreateReminder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token) return;
-    setError('');
-    try {
-      const reminder = await createReminder(
-        token,
-        reminderTitle,
-        reminderDescription || null,
-        reminderDatetime,
-        reminderTimezone || 'Asia/Kolkata'
-      );
-      setReminders((current) => [...current, reminder]);
-      setReminderTitle('');
-      setReminderDescription('');
-      setReminderDatetime('');
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Reminder creation failed.');
-    }
-  }
-
-  async function handleCancelReminder(reminderId: number) {
-    if (!token) return;
-    try {
-      const updated = await cancelReminder(token, reminderId);
-      setReminders((current) => current.map((r) => r.id === updated.id ? updated : r));
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Failed to cancel reminder.');
-    }
-  }
-
-  async function handleCompleteReminder(reminderId: number) {
-    if (!token) return;
-    try {
-      const updated = await completeReminder(token, reminderId);
-      setReminders((current) => current.map((r) => r.id === updated.id ? updated : r));
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Failed to complete reminder.');
-    }
-  }
-
-  async function handleDeleteReminder(reminderId: number) {
-    if (!token) return;
-    try {
-      await deleteReminder(token, reminderId);
-      setReminders((current) => current.filter((r) => r.id !== reminderId));
-    } catch (reminderError) {
-      setError(reminderError instanceof Error ? reminderError.message : 'Failed to delete reminder.');
-    }
-  }
-
-  function formatReminderDate(dt: string, tz?: string) {
-    const targetTz = tz || 'Asia/Kolkata';
-    try {
-      const date = new Date(dt);
-      if (isNaN(date.getTime())) return dt;
-
-      // Extract calendar day in target timezone
-      const formatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: targetTz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-      const now = new Date();
-      const targetDayStr = formatter.format(date);
-      const todayDayStr = formatter.format(now);
-
-      const [tY, tM, tD] = targetDayStr.split('-').map(Number);
-      const [nY, nM, nD] = todayDayStr.split('-').map(Number);
-      const targetCal = new Date(tY, tM - 1, tD).getTime();
-      const todayCal = new Date(nY, nM - 1, nD).getTime();
-      const dayDiff = Math.round((targetCal - todayCal) / 86400000);
-
-      const timeStr = date.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: targetTz,
-      });
-
-      if (dayDiff === 0) {
-        return `Today at ${timeStr}`;
-      } else if (dayDiff === 1) {
-        return `Tomorrow at ${timeStr}`;
-      } else if (dayDiff === -1) {
-        return `Yesterday at ${timeStr}`;
-      } else {
-        const dateStr = date.toLocaleDateString([], {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          timeZone: targetTz,
-        });
-        return `${dateStr} at ${timeStr}`;
-      }
-    } catch {
-      return dt;
-    }
-  }
-
   function signOut() {
     window.localStorage.removeItem(
       'access_token'
@@ -746,7 +617,6 @@ export default function WorkspacePage() {
     setPapers([]);
     setNotifications([]);
     setFollowUps([]);
-    setReminders([]);
     setResearchAnalysis(null);
     setWorkspaceDocuments([]);
     router.replace('/login');
@@ -2463,211 +2333,6 @@ export default function WorkspacePage() {
                   ))
                 )}
               </div>
-            </section>
-
-            {/* REMINDERS */}
-
-            <section className="mt-10 border-t border-slate-800 pt-8">
-
-              <div className="flex items-end justify-between gap-4">
-
-                <div>
-                  <p className="text-sm" style={{ color: '#d4a44c' }}>
-                    Reminders
-                  </p>
-
-                  <h2 className="mt-1 text-2xl font-semibold">
-                    Research Reminders
-                  </h2>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    Stay on track with your research tasks and deadlines.
-                  </p>
-                </div>
-
-                <span className="text-sm text-slate-500">
-                  {reminders.filter((r) => r.status === 'pending').length} upcoming
-                </span>
-
-              </div>
-
-              <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-
-                <div className="space-y-3">
-
-                  {reminders.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-700 px-6 py-12 text-center">
-                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: 'rgba(105, 76, 197, 0.08)' }}>
-                        <span style={{ color: '#7c60d6', fontSize: '1.2rem' }}>⏰</span>
-                      </div>
-                      <p className="text-base font-semibold" style={{ color: '#1b2440' }}>
-                        No reminders yet
-                      </p>
-                      <p className="mt-1.5 text-sm text-slate-500">
-                        Keep your research organized by creating your first reminder.
-                      </p>
-                    </div>
-                  ) : (
-                    reminders.map((reminder) => {
-                      const isCompleted = reminder.status === 'completed';
-                      const isCancelled = reminder.status === 'cancelled';
-                      const isSent = reminder.email_sent || reminder.status === 'sent';
-                      const isOverdue = !isCompleted && !isCancelled && !isSent && new Date(reminder.reminder_datetime) < new Date();
-                      const isDueSoon = !isCompleted && !isCancelled && !isSent && !isOverdue &&
-                        (new Date(reminder.reminder_datetime).getTime() - Date.now()) < 86400000;
-                      const statusClass = isCompleted ? 'completed' : isCancelled ? 'cancelled' : isSent ? 'sent' : isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : 'upcoming';
-                      const statusLabel = isCompleted ? '✓ Completed' : isCancelled ? 'Cancelled' : isSent ? '✓ Email Sent' : isOverdue ? 'Due' : isDueSoon ? 'Due soon' : 'Upcoming';
-
-                      return (
-                        <article
-                          key={reminder.id}
-                          className={`reminder-card status-${statusClass}`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="font-semibold" style={{ color: '#1b2440' }}>
-                                {reminder.title}
-                              </h3>
-
-                              {reminder.description && (
-                                <p className="mt-1.5 text-sm text-slate-500">
-                                  {reminder.description}
-                                </p>
-                              )}
-
-                              <p className="mt-2.5 text-xs text-slate-500">
-                                {isCompleted
-                                  ? `Completed ${new Date(reminder.updated_at).toLocaleDateString()}`
-                                  : `Scheduled for: ${formatReminderDate(reminder.reminder_datetime, reminder.timezone)} (${reminder.timezone || 'Asia/Kolkata'})`
-                                }
-                              </p>
-
-                              {reminder.email_sent && reminder.email_sent_at && (
-                                <p className="mt-1 text-xs text-indigo-600 font-medium">
-                                  Email dispatched: {new Date(reminder.email_sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                              )}
-
-                              {reminder.last_error && (
-                                <p className="mt-1 text-xs text-red-500">
-                                  Delivery issue: {reminder.last_error}
-                                </p>
-                              )}
-                            </div>
-
-                            <span className={`reminder-status-badge shrink-0 ${statusClass}`}>
-                              {statusLabel}
-                            </span>
-                          </div>
-
-                          {!isCompleted && !isCancelled && (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              <button
-                                onClick={() => handleCompleteReminder(reminder.id)}
-                                className="rounded-lg px-3.5 py-2 text-xs font-semibold text-white transition"
-                                style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}
-                              >
-                                Mark complete
-                              </button>
-                              <button
-                                onClick={() => handleCancelReminder(reminder.id)}
-                                className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={() => handleDeleteReminder(reminder.id)}
-                                className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs text-slate-600 transition hover:border-[#d66060] hover:text-[#d66060]"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-
-                        </article>
-                      );
-                    })
-
-                  )}
-
-                </div>
-
-                <form
-                  onSubmit={handleCreateReminder}
-                  className="h-fit rounded-xl border border-slate-800 bg-slate-900 p-5"
-                >
-
-                  <h2 className="font-semibold">
-                    Add a reminder
-                  </h2>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    Never miss a research deadline.
-                  </p>
-
-                  <div className="mt-5 space-y-3">
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Title</label>
-                      <input
-                        required
-                        minLength={1}
-                        value={reminderTitle}
-                        onChange={(event) => setReminderTitle(event.target.value)}
-                        placeholder="e.g., Review literature"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Notes</label>
-                      <textarea
-                        value={reminderDescription}
-                        onChange={(event) => setReminderDescription(event.target.value)}
-                        placeholder="Optional description"
-                        rows={3}
-                        className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Date & time</label>
-                      <input
-                        required
-                        type="datetime-local"
-                        value={reminderDatetime}
-                        onChange={(event) => setReminderDatetime(event.target.value)}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Timezone</label>
-                      <select
-                        value={reminderTimezone}
-                        onChange={(event) => setReminderTimezone(event.target.value)}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm outline-none focus:border-cyan-400 text-slate-200"
-                      >
-                        <option value="Asia/Kolkata">Asia/Kolkata (IST — India Standard Time)</option>
-                        <option value="UTC">UTC (Coordinated Universal Time)</option>
-                        <option value="America/New_York">America/New_York (EST / EDT)</option>
-                        <option value="Europe/London">Europe/London (GMT / BST)</option>
-                      </select>
-                    </div>
-
-                    <button
-                      className="w-full rounded-lg px-4 py-3 text-sm font-semibold text-white transition"
-                      style={{ background: 'linear-gradient(135deg, #6d4fd2, #8d70ed)' }}
-                    >
-                      Create reminder
-                    </button>
-
-                  </div>
-
-                </form>
-
-              </div>
-
             </section>
 
             {/* NOTIFICATIONS */}

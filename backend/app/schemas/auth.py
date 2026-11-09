@@ -1,56 +1,34 @@
-from datetime import datetime
-
 from pydantic import BaseModel, EmailStr, Field
 
 
-class VerifyEmailRequest(BaseModel):
+class RegisterRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str | None = None
 
 
-class ResendOtpRequest(BaseModel):
+class LoginRequest(BaseModel):
     email: EmailStr
-
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class VerifyResetOtpRequest(BaseModel):
-    email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
-
-
-class ResetPasswordRequest(BaseModel):
-    email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
-    new_password: str = Field(..., min_length=8, max_length=128)
-
-
-class MessageResponse(BaseModel):
-    message: str
-
-
-class OtpSentResponse(BaseModel):
-    message: str
-    expires_in_seconds: int = 300
-    email_status: str = "sent"
-    email_detail: str = ""
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    email_status: str = ""
-    email_detail: str = ""
+    user_id: int | None = None
+    email: str | None = None
+    name: str | None = None
     message: str = ""
 
 
 class RegistrationResponse(BaseModel):
-    message: str = "Verification code sent to your email."
+    message: str = "Account created successfully."
     email: str
-    require_verification: bool = True
-    email_status: str = "sent"
-    email_detail: str = ""
-    access_token: str = ""
+    access_token: str
     token_type: str = "bearer"
+    user_id: int | None = None
+
+
+class MessageResponse(BaseModel):
+    message: str

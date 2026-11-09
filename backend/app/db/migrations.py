@@ -177,6 +177,12 @@ def upgrade_sqlite_schema(engine: Engine) -> None:
         if "timezone" not in reminder_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE user_reminders ADD COLUMN timezone VARCHAR(64) DEFAULT 'Asia/Kolkata'"))
+        if "project_id" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN project_id INTEGER"))
+        if "attempts" not in reminder_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_reminders ADD COLUMN attempts INTEGER DEFAULT 0"))
 
 
 
